@@ -8,7 +8,6 @@ esp32:
     type: esp-idf
     version: recommended
 
-# Use the local external component
 external_components:
   - source:
       type: local
@@ -19,9 +18,15 @@ mm_halow:
   ssid: "halowlink2-627b"
   password: "your-password-here"
   country_code: "US"
-  # Path to local MM-IoT-SDK clone (Seeed fork)
+  security: SAE                          # SAE (WPA3), OWE, or OPEN
+  bcf_file: "bcf_mf16858.mbin"            # Board config for FGH100M-H
   mm_iot_sdk_path: "~/esp/mm-iot-esp32-upstream"
-  # Pin defaults match XIAO HaLow Hat -- override for other boards:
+  # manual_ip:                           # Uncomment for static IP
+  #   static_ip: 192.168.12.100
+  #   gateway: 192.168.12.1
+  #   subnet: 255.255.255.0
+  #   dns1: 8.8.8.8
+  # Pin defaults match XIAO HaLow Hat:
   # clk_pin: 7
   # mosi_pin: 9
   # miso_pin: 8
@@ -31,12 +36,33 @@ mm_halow:
   # wake_pin: 2
   # busy_pin: 5
 
-# ESPHome API for Home Assistant
+  # Diagnostic sensors
+  rssi:
+    name: "HaLow RSSI"
+  tx_packets:
+    name: "HaLow TX Packets"
+  rx_packets:
+    name: "HaLow RX Packets"
+  ip_address:
+    name: "HaLow IP Address"
+  gateway_address:
+    name: "HaLow Gateway"
+  connected_ssid:
+    name: "HaLow SSID"
+  bssid:
+    name: "HaLow BSSID"
+  mac_address:
+    name: "HaLow MAC Address"
+  firmware_version:
+    name: "HaLow FW Version"
+
 api:
 
-# Enable logging
 logger:
 
-# OTA updates (over HaLow!)
 ota:
   platform: esphome
+
+sensor:
+  - platform: uptime
+    name: Uptime

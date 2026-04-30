@@ -7,15 +7,29 @@ from esphome.const import (
     CONF_ID,
     CONF_PASSWORD,
     CONF_SSID,
+    DEVICE_CLASS_SIGNAL_STRENGTH,
+    ENTITY_CATEGORY_DIAGNOSTIC,
+    STATE_CLASS_MEASUREMENT,
+    STATE_CLASS_TOTAL_INCREASING,
+    UNIT_DECIBEL_MILLIWATT,
 )
 from esphome.core import coroutine_with_priority, CORE
 from esphome.components.esp32 import add_idf_sdkconfig_option, add_idf_component
 
 DEPENDENCIES = ["esp32"]
-AUTO_LOAD = ["network"]
+AUTO_LOAD = ["network", "sensor", "text_sensor"]
 CONFLICTS_WITH = ["wifi"]
 
 CONF_COUNTRY_CODE = "country_code"
+CONF_SECURITY = "security"
+CONF_BCF_FILE = "bcf_file"
+CONF_MM_IOT_SDK_PATH = "mm_iot_sdk_path"
+CONF_MANUAL_IP = "manual_ip"
+CONF_STATIC_IP = "static_ip"
+CONF_GATEWAY = "gateway"
+CONF_SUBNET = "subnet"
+CONF_DNS1 = "dns1"
+CONF_DNS2 = "dns2"
 CONF_CLK_PIN = "clk_pin"
 CONF_MOSI_PIN = "mosi_pin"
 CONF_MISO_PIN = "miso_pin"
@@ -24,10 +38,48 @@ CONF_IRQ_PIN = "irq_pin"
 CONF_RESET_PIN = "reset_pin"
 CONF_WAKE_PIN = "wake_pin"
 CONF_BUSY_PIN = "busy_pin"
-CONF_MM_IOT_SDK_PATH = "mm_iot_sdk_path"
+
+# Sensor config keys
+CONF_RSSI_SENSOR = "rssi"
+CONF_TX_PACKETS = "tx_packets"
+CONF_RX_PACKETS = "rx_packets"
+CONF_IP_ADDRESS_SENSOR = "ip_address"
+CONF_GATEWAY_SENSOR = "gateway_address"
+CONF_SUBNET_SENSOR = "subnet_mask"
+CONF_SSID_SENSOR = "connected_ssid"
+CONF_BSSID_SENSOR = "bssid"
+CONF_MAC_ADDRESS_SENSOR = "mac_address"
+CONF_FW_VERSION_SENSOR = "firmware_version"
 
 mm_halow_ns = cg.esphome_ns.namespace("mm_halow")
 MMHalowComponent = mm_halow_ns.class_("MMHalowComponent", cg.Component)
+
+MANUAL_IP_SCHEMA = cv.Schema(
+    {
+        cv.Required(CONF_STATIC_IP): cv.ipv4address,
+        cv.Required(CONF_GATEWAY): cv.ipv4address,
+        cv.Required(CONF_SUBNET): cv.ipv4address,
+        cv.Optional(CONF_DNS1, default="0.0.0.0"): cv.ipv4address,
+        cv.Optional(CONF_DNS2, default="0.0.0.0"): cv.ipv4address,
+    }
+)
+
+SECURITY_TYPES = {"SAE": "SAE", "OWE": "OWE", "OPEN": "OPEN"}
+
+
+def _sensor_schema(**kwargs):
+    """Import sensor schema lazily to avoid circular deps."""
+    import esphome.components.sensor as sensor_ns
+
+    return sensor_ns.sensor_schema(**kwargs)
+
+
+def _text_sensor_schema(**kwargs):
+    """Import text_sensor schema lazily to avoid circular deps."""
+    import esphome.components.text_sensor as ts_ns
+
+    return ts_ns.text_sensor_schema(**kwargs)
+
 
 CONFIG_SCHEMA = cv.All(
     cv.Schema(
@@ -36,12 +88,15 @@ CONFIG_SCHEMA = cv.All(
             cv.Required(CONF_SSID): cv.string,
             cv.Required(CONF_PASSWORD): cv.string,
             cv.Optional(CONF_COUNTRY_CODE, default="US"): cv.string_strict,
-            # Path to the MM-IoT-SDK clone (Seeed fork)
+            cv.Optional(CONF_SECURITY, default="SAE"): cv.enum(
+                SECURITY_TYPES, upper=True
+            ),
+            cv.Optional(CONF_BCF_FILE, default="bcf_mf16858.mbin"): cv.string_strict,
             cv.Optional(
-                CONF_MM_IOT_SDK_PATH,
-                default="~/esp/mm-iot-esp32",
+                CONF_MM_IOT_SDK_PATH, default="~/esp/mm-iot-esp32"
             ): cv.string,
-            # SPI pins - defaults match XIAO HaLow Hat
+            cv.Optional(CONF_MANUAL_IP): MANUAL_IP_SCHEMA,
+            # SPI pins — defaults match XIAO HaLow Hat
             cv.Optional(CONF_CLK_PIN, default=7): cv.int_,
             cv.Optional(CONF_MOSI_PIN, default=9): cv.int_,
             cv.Optional(CONF_MISO_PIN, default=8): cv.int_,
@@ -50,6 +105,52 @@ CONFIG_SCHEMA = cv.All(
             cv.Optional(CONF_RESET_PIN, default=1): cv.int_,
             cv.Optional(CONF_WAKE_PIN, default=2): cv.int_,
             cv.Optional(CONF_BUSY_PIN, default=5): cv.int_,
+            # Numeric sensors
+            cv.Optional(CONF_RSSI_SENSOR): _sensor_schema(
+                unit_of_measurement=UNIT_DECIBEL_MILLIWATT,
+                accuracy_decimals=0,
+                device_class=DEVICE_CLASS_SIGNAL_STRENGTH,
+                state_class=STATE_CLASS_MEASUREMENT,
+                entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+            ),
+            cv.Optional(CONF_TX_PACKETS): _sensor_schema(
+                accuracy_decimals=0,
+                state_class=STATE_CLASS_TOTAL_INCREASING,
+                entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+                icon="mdi:upload-network",
+            ),
+            cv.Optional(CONF_RX_PACKETS): _sensor_schema(
+                accuracy_decimals=0,
+                state_class=STATE_CLASS_TOTAL_INCREASING,
+                entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+                icon="mdi:download-network",
+            ),
+            # Text sensors
+            cv.Optional(CONF_IP_ADDRESS_SENSOR): _text_sensor_schema(
+                entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+                icon="mdi:ip-network",
+            ),
+            cv.Optional(CONF_GATEWAY_SENSOR): _text_sensor_schema(
+                entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+                icon="mdi:router-wireless",
+            ),
+            cv.Optional(CONF_SUBNET_SENSOR): _text_sensor_schema(
+                entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+            ),
+            cv.Optional(CONF_SSID_SENSOR): _text_sensor_schema(
+                entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+                icon="mdi:wifi",
+            ),
+            cv.Optional(CONF_BSSID_SENSOR): _text_sensor_schema(
+                entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+            ),
+            cv.Optional(CONF_MAC_ADDRESS_SENSOR): _text_sensor_schema(
+                entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+            ),
+            cv.Optional(CONF_FW_VERSION_SENSOR): _text_sensor_schema(
+                entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+                icon="mdi:chip",
+            ),
         }
     ),
     cv.only_on_esp32,
@@ -61,11 +162,13 @@ async def to_code(config):
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
 
-    # Set component configuration
+    # Core configuration
     cg.add(var.set_ssid(config[CONF_SSID]))
     cg.add(var.set_password(config[CONF_PASSWORD]))
     cg.add(var.set_country_code(config[CONF_COUNTRY_CODE]))
+    cg.add(var.set_security_type(config[CONF_SECURITY]))
 
+    # Pin configuration
     cg.add(var.set_spi_clk_pin(config[CONF_CLK_PIN]))
     cg.add(var.set_spi_mosi_pin(config[CONF_MOSI_PIN]))
     cg.add(var.set_spi_miso_pin(config[CONF_MISO_PIN]))
@@ -75,9 +178,49 @@ async def to_code(config):
     cg.add(var.set_wake_pin(config[CONF_WAKE_PIN]))
     cg.add(var.set_busy_pin(config[CONF_BUSY_PIN]))
 
+    # Static IP
+    if manual_ip := config.get(CONF_MANUAL_IP):
+        cg.add(
+            var.set_manual_ip(
+                str(manual_ip[CONF_STATIC_IP]),
+                str(manual_ip[CONF_GATEWAY]),
+                str(manual_ip[CONF_SUBNET]),
+                str(manual_ip.get(CONF_DNS1, "0.0.0.0")),
+                str(manual_ip.get(CONF_DNS2, "0.0.0.0")),
+            )
+        )
+
+    # Sensors
+    import esphome.components.sensor as sensor_ns
+    import esphome.components.text_sensor as ts_ns
+
+    for conf_key, setter in [
+        (CONF_RSSI_SENSOR, var.set_rssi_sensor),
+        (CONF_TX_PACKETS, var.set_tx_packets_sensor),
+        (CONF_RX_PACKETS, var.set_rx_packets_sensor),
+    ]:
+        if conf_key in config:
+            sens = await sensor_ns.new_sensor(config[conf_key])
+            cg.add(setter(sens))
+
+    for conf_key, setter in [
+        (CONF_IP_ADDRESS_SENSOR, var.set_ip_address_sensor),
+        (CONF_GATEWAY_SENSOR, var.set_gateway_sensor),
+        (CONF_SUBNET_SENSOR, var.set_subnet_sensor),
+        (CONF_SSID_SENSOR, var.set_ssid_sensor),
+        (CONF_BSSID_SENSOR, var.set_bssid_sensor),
+        (CONF_MAC_ADDRESS_SENSOR, var.set_mac_address_sensor),
+        (CONF_FW_VERSION_SENSOR, var.set_fw_version_sensor),
+    ]:
+        if conf_key in config:
+            sens = await ts_ns.new_text_sensor(config[conf_key])
+            cg.add(setter(sens))
+
     cg.add_define("USE_MM_HALOW")
 
-    # Resolve MM-IoT-SDK path (upstream MorseMicro fork preferred, supports IDF >=5.1.1)
+    # --- MM-IoT-SDK Integration ---
+
+    # Resolve SDK path
     sdk_path = os.path.expanduser(config[CONF_MM_IOT_SDK_PATH])
     sdk_path = os.path.abspath(sdk_path)
     framework_path = os.path.join(sdk_path, "framework")
@@ -85,38 +228,21 @@ async def to_code(config):
     if not os.path.isdir(framework_path):
         raise cv.Invalid(
             f"MM-IoT-SDK not found at {sdk_path}. "
-            f"Clone it with: git clone https://github.com/MorseMicro/mm-iot-esp32.git {sdk_path}"
+            f"Clone: git clone https://github.com/MorseMicro/mm-iot-esp32.git {sdk_path}"
         )
 
-    # Register MM-IoT-SDK ESP-IDF components via local paths.
-    # These directories each contain CMakeLists.txt + idf_component.yml
-    # that the ESP-IDF build system understands natively.
-    add_idf_component(
-        name="morselib",
-        path=os.path.join(framework_path, "morselib"),
-    )
-    add_idf_component(
-        name="mm_shims",
-        path=os.path.join(framework_path, "mm_shims"),
-    )
-    add_idf_component(
-        name="mmipal",
-        path=os.path.join(framework_path, "src", "mmipal"),
-    )
-    add_idf_component(
-        name="mmutils",
-        path=os.path.join(framework_path, "src", "mmutils"),
-    )
-    add_idf_component(
-        name="mmpktmem",
-        path=os.path.join(framework_path, "src", "mmpktmem"),
-    )
-    add_idf_component(
-        name="mmregdb",
-        path=os.path.join(framework_path, "src", "mmregdb"),
-    )
+    # Register IDF components
+    for name, subpath in [
+        ("morselib", "morselib"),
+        ("mm_shims", "mm_shims"),
+        ("mmipal", "src/mmipal"),
+        ("mmutils", "src/mmutils"),
+        ("mmpktmem", "src/mmpktmem"),
+        ("mmregdb", "src/mmregdb"),
+    ]:
+        add_idf_component(name=name, path=os.path.join(framework_path, subpath))
 
-    # Kconfig: Pin mapping for MM6108 SPI interface
+    # Kconfig: Pins
     add_idf_sdkconfig_option("CONFIG_MM_RESET_N", config[CONF_RESET_PIN])
     add_idf_sdkconfig_option("CONFIG_MM_WAKE", config[CONF_WAKE_PIN])
     add_idf_sdkconfig_option("CONFIG_MM_BUSY", config[CONF_BUSY_PIN])
@@ -126,35 +252,29 @@ async def to_code(config):
     add_idf_sdkconfig_option("CONFIG_MM_SPI_CS", config[CONF_CS_PIN])
     add_idf_sdkconfig_option("CONFIG_MM_SPI_IRQ", config[CONF_IRQ_PIN])
 
-    # Kconfig: Firmware and board configuration files
-    # The upstream mm_shims CMakeLists.txt searches for these in morsefirmware/
-    add_idf_sdkconfig_option("CONFIG_MM_BCF_FILE", "bcf_mf16858.mbin")
+    # Kconfig: Firmware files
+    add_idf_sdkconfig_option("CONFIG_MM_BCF_FILE", config[CONF_BCF_FILE])
     add_idf_sdkconfig_option("CONFIG_MM_FW_FILE", "mm6108.mbin")
-
-    # Kconfig: Chip type
     add_idf_sdkconfig_option("CONFIG_MMHAL_CHIP_TYPE_MM6108", True)
 
-    # Kconfig: FreeRTOS settings required by MM-IoT-SDK
+    # Kconfig: FreeRTOS
     add_idf_sdkconfig_option("CONFIG_FREERTOS_HZ", 1000)
     add_idf_sdkconfig_option("CONFIG_FREERTOS_TIMER_TASK_PRIORITY", 10)
 
-    # Kconfig: ESP32-S3 cache optimization
+    # Kconfig: ESP32-S3
     add_idf_sdkconfig_option("CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB", True)
-
-    # Kconfig: MbedTLS option required by MM-IoT-SDK crypto shim
     add_idf_sdkconfig_option("CONFIG_MBEDTLS_NIST_KW_C", True)
 
-    # Kconfig: LWIP callbacks required by mmipal
+    # Kconfig: LWIP callbacks for mmipal
     add_idf_sdkconfig_option("CONFIG_LWIP_NETIF_STATUS_CALLBACK", True)
-
-    # LWIP_NETIF_LINK_CALLBACK is not exposed via Kconfig in ESP-IDF v5.5+,
-    # so we set it directly as a compile definition
     cg.add_build_flag("-DLWIP_NETIF_LINK_CALLBACK=1")
 
-    # The mm_shims CMakeLists uses objcopy custom commands to embed .mbin
-    # firmware files. PlatformIO may not run these before linking. We add
-    # a post-configure hook via extra_scripts to ensure the custom target
-    # 'morsefirmware' is built before the main link step.
+    # Note: CONFIG_ESP_WIFI_ENABLED cannot be disabled — the MM-IoT-SDK's
+    # SPI driver may depend on WiFi coexistence infrastructure internally.
+    # mDNS will fail (ESP_ERR_INVALID_STATE) because there's no esp_netif
+    # registered for the HaLow interface. This is a known limitation.
+
+    # PlatformIO extra script for firmware blob generation
     cg.add_platformio_option(
         "extra_scripts",
         [os.path.join(os.path.dirname(__file__), "pre_build.py")],

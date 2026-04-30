@@ -3,11 +3,24 @@
 #include "esphome/core/component.h"
 #include "esphome/components/network/ip_address.h"
 
+#ifdef USE_SENSOR
+#include "esphome/components/sensor/sensor.h"
+#endif
+#ifdef USE_TEXT_SENSOR
+#include "esphome/components/text_sensor/text_sensor.h"
+#endif
+
 #include <string>
 #include <array>
 
 namespace esphome {
 namespace mm_halow {
+
+enum class HalowState : uint8_t {
+  STOPPED,
+  CONNECTING,
+  CONNECTED,
+};
 
 class MMHalowComponent : public Component {
  public:
@@ -16,14 +29,19 @@ class MMHalowComponent : public Component {
   void dump_config() override;
   float get_setup_priority() const override;
 
-  bool is_connected() const { return this->connected_; }
+  bool is_connected() const { return this->state_ == HalowState::CONNECTED; }
   network::IPAddresses get_ip_addresses() const { return this->ip_addresses_; }
   std::string get_ip_address_str() const;
 
-  // Configuration setters (called from generated code)
+  // Configuration setters
   void set_ssid(const std::string &ssid) { this->ssid_ = ssid; }
   void set_password(const std::string &password) { this->password_ = password; }
   void set_country_code(const std::string &cc) { this->country_code_ = cc; }
+  void set_security_type(const std::string &type) { this->security_type_ = type; }
+
+  void set_manual_ip(const std::string &ip, const std::string &gw,
+                     const std::string &subnet, const std::string &dns1,
+                     const std::string &dns2);
 
   void set_spi_clk_pin(uint8_t pin) { this->spi_clk_pin_ = pin; }
   void set_spi_mosi_pin(uint8_t pin) { this->spi_mosi_pin_ = pin; }
@@ -34,15 +52,42 @@ class MMHalowComponent : public Component {
   void set_wake_pin(uint8_t pin) { this->wake_pin_ = pin; }
   void set_busy_pin(uint8_t pin) { this->busy_pin_ = pin; }
 
+  // Sensor setters
+#ifdef USE_SENSOR
+  void set_rssi_sensor(sensor::Sensor *s) { this->rssi_sensor_ = s; }
+  void set_tx_packets_sensor(sensor::Sensor *s) { this->tx_packets_sensor_ = s; }
+  void set_rx_packets_sensor(sensor::Sensor *s) { this->rx_packets_sensor_ = s; }
+#endif
+#ifdef USE_TEXT_SENSOR
+  void set_ip_address_sensor(text_sensor::TextSensor *s) { this->ip_address_sensor_ = s; }
+  void set_gateway_sensor(text_sensor::TextSensor *s) { this->gateway_sensor_ = s; }
+  void set_subnet_sensor(text_sensor::TextSensor *s) { this->subnet_sensor_ = s; }
+  void set_ssid_sensor(text_sensor::TextSensor *s) { this->ssid_sensor_ = s; }
+  void set_bssid_sensor(text_sensor::TextSensor *s) { this->bssid_sensor_ = s; }
+  void set_mac_address_sensor(text_sensor::TextSensor *s) { this->mac_address_sensor_ = s; }
+  void set_fw_version_sensor(text_sensor::TextSensor *s) { this->fw_version_sensor_ = s; }
+#endif
+
  protected:
   void start_connect_();
-  void check_ip_();
+  bool check_ip_();
+  void update_sensors_();
 
+  // Config
   std::string ssid_;
   std::string password_;
   std::string country_code_{"US"};
+  std::string security_type_{"SAE"};
 
-  // SPI pin config
+  // Static IP
+  bool use_static_ip_{false};
+  std::string static_ip_;
+  std::string static_gw_;
+  std::string static_subnet_;
+  std::string static_dns1_;
+  std::string static_dns2_;
+
+  // SPI pins
   uint8_t spi_clk_pin_{7};
   uint8_t spi_mosi_pin_{9};
   uint8_t spi_miso_pin_{8};
@@ -52,11 +97,29 @@ class MMHalowComponent : public Component {
   uint8_t wake_pin_{2};
   uint8_t busy_pin_{5};
 
-  bool connected_{false};
-  bool started_{false};
-  bool got_ip_{false};
+  // State
+  HalowState state_{HalowState::STOPPED};
   uint32_t connect_start_time_{0};
+  uint32_t last_sensor_update_{0};
+  uint32_t reconnect_count_{0};
+  bool setup_complete_{false};
   network::IPAddresses ip_addresses_{};
+
+  // Sensors
+#ifdef USE_SENSOR
+  sensor::Sensor *rssi_sensor_{nullptr};
+  sensor::Sensor *tx_packets_sensor_{nullptr};
+  sensor::Sensor *rx_packets_sensor_{nullptr};
+#endif
+#ifdef USE_TEXT_SENSOR
+  text_sensor::TextSensor *ip_address_sensor_{nullptr};
+  text_sensor::TextSensor *gateway_sensor_{nullptr};
+  text_sensor::TextSensor *subnet_sensor_{nullptr};
+  text_sensor::TextSensor *ssid_sensor_{nullptr};
+  text_sensor::TextSensor *bssid_sensor_{nullptr};
+  text_sensor::TextSensor *mac_address_sensor_{nullptr};
+  text_sensor::TextSensor *fw_version_sensor_{nullptr};
+#endif
 };
 
 extern MMHalowComponent *global_mm_halow_component;  // NOLINT
