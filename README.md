@@ -29,8 +29,12 @@ This component provides a drop-in network interface for ESPHome, replacing `wifi
 
 ### Prerequisites
 - ESPHome 2024.2+ with ESP-IDF framework support
-- [Morse Micro MM-IoT-SDK](https://github.com/Seeed-Studio/mm-iot-esp32) (Seeed fork, cloned locally)
-- ESP-IDF v5.1.1 (required by MM-IoT-SDK)
+- [Morse Micro MM-IoT-SDK](https://github.com/MorseMicro/mm-iot-esp32) (upstream, cloned locally)
+
+Clone the SDK:
+```bash
+git clone https://github.com/MorseMicro/mm-iot-esp32.git ~/esp/mm-iot-esp32
+```
 
 ### Example YAML
 
@@ -43,7 +47,7 @@ esp32:
   board: seeed_xiao_esp32s3
   framework:
     type: esp-idf
-    version: "5.1.1"
+    version: recommended
 
 external_components:
   - source: github://sweitzja/esphome-halow
@@ -53,6 +57,7 @@ mm_halow:
   ssid: "my-halow-ap"
   password: "my-password"
   country_code: "US"
+  mm_iot_sdk_path: "~/esp/mm-iot-esp32"
   # Pins default to XIAO HaLow Hat mapping. Override for other boards:
   # clk_pin: 7
   # mosi_pin: 9
@@ -95,10 +100,10 @@ ESP32-S3 ◄──────────────────────�
 
 1. **mmhal_init()** -- Initialize SPI bus, GPIO pins (reset, wake, busy, IRQ)
 2. **mmwlan_init()** -- Initialize WLAN subsystem
-3. **mmwlan_boot()** -- Load `mm6108.mbin` firmware + `bcf_mf16858_us.mbin` board config over SPI
+3. **mmwlan_boot()** -- Load `mm6108.mbin` firmware + `bcf_mf16858.mbin` board config over SPI
 4. **mmipal_init()** -- Initialize LWIP network stack with DHCP
 5. **mmwlan_sta_enable()** -- Start WPA3-SAE association with the AP
-6. Link comes up (~8-10 seconds from boot), DHCP assigns IP address
+6. Link comes up, DHCP assigns IP address. Full setup takes ~10s from cold boot.
 
 ### Pin Mapping
 
@@ -123,8 +128,8 @@ The MM6108 has no persistent firmware. Two binary files are embedded in the ESP3
 
 | File | Purpose | Size | Source |
 |------|---------|------|--------|
-| `mm6108.mbin` | MM6108 SoC firmware (v1.13.1) | ~400 KB | MM-IoT-SDK `framework/morsefirmware/` |
-| `bcf_mf16858_us.mbin` | Board config for FGH100M-H (US regulatory) | ~2 KB | MM-IoT-SDK `framework/morsefirmware/` |
+| `mm6108.mbin` | MM6108 SoC firmware (v1.17.6) | ~400 KB | MM-IoT-SDK `framework/morsefirmware/` |
+| `bcf_mf16858.mbin` | Board config for FGH100M-H (US regulatory) | ~2 KB | MM-IoT-SDK `framework/morsefirmware/mm6108/bcfs/` |
 
 Other BCF files are available for different modules and regulatory domains.
 
@@ -135,11 +140,13 @@ All testing performed with XIAO ESP32-S3 + XIAO HaLow Hat + GL-iNet HaLowLink 2:
 | Test | Result |
 |------|--------|
 | SPI communication (SDIO registers) | Pass -- CCCR and FBR registers readable |
-| MM6108 firmware boot | Pass -- FW v1.13.1, morselib v2.6.4-esp32, chip ID 0x306 |
+| MM6108 firmware boot | Pass -- FW v1.17.6, morselib v2.10.4-esp32, chip ID 0x306 |
 | HaLow network scan | Pass -- Found AP at -41 dBm, 8 MHz BW |
-| WPA3-SAE authentication | Pass -- Link up in ~8 seconds |
+| WPA3-SAE authentication | Pass -- Link up in ~10 seconds |
 | DHCP IP acquisition | Pass -- 192.168.12.164 from gateway 192.168.12.1 |
 | LWIP TCP/UDP stack | Pass -- iperf server operational |
+| ESPHome compile | Pass -- 1.08MB firmware, 59% flash usage |
+| **ESPHome full boot** | **Pass** -- API server + OTA over HaLow, DHCP IP acquired |
 
 ## Component Configuration
 
@@ -171,8 +178,8 @@ The SDK is licensed under Apache-2.0 (shims/examples) and a Morse Micro BDL (bin
 
 ## References
 
-- [Morse Micro MM-IoT-SDK (Seeed fork)](https://github.com/Seeed-Studio/mm-iot-esp32) -- Primary SDK used
-- [Morse Micro MM-IoT-SDK (upstream)](https://github.com/MorseMicro/mm-iot-esp32) -- Reference implementation
+- [Morse Micro MM-IoT-SDK](https://github.com/MorseMicro/mm-iot-esp32) -- Primary SDK (upstream, supports ESP-IDF >=5.1.1)
+- [Seeed MM-IoT-SDK fork](https://github.com/Seeed-Studio/mm-iot-esp32) -- Seeed's fork (pinned to ESP-IDF 5.1.1)
 - [Morse Micro MM6108 Datasheet](https://www.morsemicro.com/chips/) -- SoC specifications
 - [Seeed Wiki: Getting Started with Wi-Fi HaLow](https://wiki.seeedstudio.com/getting_started_with_wifi_halow_module_for_xiao/) -- Hardware setup guide
 - [IEEE 802.11ah Standard](https://en.wikipedia.org/wiki/IEEE_802.11ah) -- Wi-Fi HaLow specification
