@@ -85,7 +85,10 @@ via the Seeed XIAO HaLow Hat (WIO-WM6180) on an XIAO ESP32-S3.
    - WPA3-SAE auth successful with `your-password-here`
    - Link up in ~8 seconds from boot
    - ARP test packet sent successfully
-5. ⬜ Test IP connectivity (ping, iperf)
+5. ✅ Test IP connectivity (iperf example with LWIP + DHCP)
+   - DHCP acquired IP: 192.168.12.164 from gateway 192.168.12.1
+   - MAC: a8:dd:9f:4d:c6:01
+   - Full LWIP stack operational, iperf UDP server running
 6. ⬜ Characterize range and throughput
 
 ### Phase 3: ESPHome Integration
