@@ -28,21 +28,24 @@ via the Seeed XIAO HaLow Hat (WIO-WM6180) on an XIAO ESP32-S3.
 
 ## Pin Mapping: ESP32-S3 ↔ MM6108 (via HaLow Hat)
 
-Based on Seeed documentation and community sources (needs verification):
+**VERIFIED** from Seeed's mm-iot-esp32 fork Kconfig defaults
+(https://github.com/Seeed-Studio/mm-iot-esp32/blob/main/framework/mm_shims/Kconfig):
 
-| Function   | ESP32-S3 GPIO | XIAO Pin | Notes                    |
-|------------|---------------|----------|--------------------------|
-| SPI SCK    | GPIO 7        | D8       | SPI clock                |
-| SPI MISO   | GPIO 8        | D9       | Master In Slave Out      |
-| SPI MOSI   | GPIO 9        | D10      | Master Out Slave In      |
-| SPI CS     | GPIO 3        | D3/A3    | Chip select (needs verify)|
-| RESET_N    | GPIO 4        | D4/A4    | Module reset (active low)|
-| BUSY/IRQ   | GPIO 1        | D1/A1    | Interrupt (may not be wired)|
-| WAKE       | GPIO 2        | D2/A2    | Wake signal (needs verify)|
+| Function   | ESP32-S3 GPIO | XIAO Pin | Notes                          |
+|------------|---------------|----------|--------------------------------|
+| SPI SCK    | GPIO 7        | D8       | SPI clock                      |
+| SPI MISO   | GPIO 8        | D9       | Master In Slave Out            |
+| SPI MOSI   | GPIO 9        | D10      | Master Out Slave In            |
+| SPI CS     | GPIO 4        | D4/A4    | Chip select                    |
+| SPI IRQ    | GPIO 3        | D3/A3    | Out-of-band interrupt (data ready)|
+| RESET_N    | GPIO 1        | D1/A1    | Module reset (active low)      |
+| WAKE       | GPIO 2        | D2/A2    | Wake signal                    |
+| BUSY       | GPIO 5        | D5/A5    | Rising edge interrupt          |
 
-**WARNING**: Pin mapping has conflicting sources. Must verify against actual
-HaLow Hat schematic or by probing. The Seeed mm-iot-esp32 sdkconfig is
-the authoritative source.
+### BCF (Board Configuration File)
+- Default: `bcf_mf16858_us.mbin` (for WM6180 / FGH100M-H module)
+- Firmware: `mm6108.mbin`
+- Chip type: MM6108
 
 ## SDK / Firmware
 
@@ -67,8 +70,11 @@ the authoritative source.
 
 ### Phase 1: Hardware Verification (current)
 1. ✅ Connect ESP32-S3 via USB serial
-2. ⬜ Verify SPI communication with MM6108
-3. ⬜ Scan for HaLow networks (find HaLowLink 2)
+2. ✅ Verify SPI communication with MM6108 (SDIO registers readable)
+3. ✅ Scan for HaLow networks — found HaLowLink 2!
+   - SSID: halowlink2-627b, BSSID: 50:2e:91:d2:c9:e4
+   - RSSI: -41 dBm, BW: 8 MHz, Security: SAE (WPA3)
+   - Morse FW v1.13.1, morselib v2.6.4-esp32, chip ID 0x306
 
 ### Phase 2: Network Connectivity
 4. ⬜ Connect to HaLowLink 2 AP
