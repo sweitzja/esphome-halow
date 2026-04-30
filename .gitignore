@@ -4,6 +4,9 @@ sdkconfig
 sdkconfig.old
 managed_components/
 
+# PlatformIO
+.pio/
+
 # ESP-IDF
 dependencies.lock
 

@@ -52,10 +52,14 @@ via the Seeed XIAO HaLow Hat (WIO-WM6180) on an XIAO ESP32-S3.
 ### Morse Micro MM-IoT-SDK
 - ESP-IDF based SDK for MM6108/MM8108
 - Upstream: https://github.com/MorseMicro/mm-iot-esp32
-- Seeed fork: https://github.com/Seeed-Studio/mm-iot-esp32
-- Requires ESP-IDF v5.1.1+ (Seeed) or v5.2.2+ (upstream)
+- Seeed fork: https://github.com/Seeed-Studio/mm-iot-esp32 (used for this project)
+- Requires ESP-IDF v5.1.1 (Seeed fork pinned to this version)
+- Local installs:
+  - ESP-IDF: `~/esp/esp-idf-v5.1.1/`
+  - MM-IoT-SDK: `~/esp/mm-iot-esp32/`
 - Board Config Files (BCF): binary blobs loaded onto MM6108 at init
-  - Located in `bcf/quectel/` directory (e.g., bcf_fgh100maamd.bin)
+  - Located in `framework/morsefirmware/` directory
+- MM6108 has NO persistent firmware — ESP32 must load fw+bcf over SPI every boot
 
 ### Morse Firmware (BCF files)
 - https://github.com/MorseMicro/morse-firmware/tree/main/bcf/quectel
@@ -77,7 +81,10 @@ via the Seeed XIAO HaLow Hat (WIO-WM6180) on an XIAO ESP32-S3.
    - Morse FW v1.13.1, morselib v2.6.4-esp32, chip ID 0x306
 
 ### Phase 2: Network Connectivity
-4. ⬜ Connect to HaLowLink 2 AP
+4. ✅ Connect to HaLowLink 2 AP
+   - WPA3-SAE auth successful with `your-password-here`
+   - Link up in ~8 seconds from boot
+   - ARP test packet sent successfully
 5. ⬜ Test IP connectivity (ping, iperf)
 6. ⬜ Characterize range and throughput
 
