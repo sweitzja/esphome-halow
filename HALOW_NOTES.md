@@ -67,14 +67,52 @@ RESET=3, WAKE=8, BUSY=9. These are for the Morse Micro EKH08 dev board, not the 
 
 ## Firmware and Board Configuration
 
-### Binary Files (from MM-IoT-SDK `framework/morsefirmware/`)
-| File                    | Purpose                           | Notes |
-|-------------------------|-----------------------------------|-------|
-| `mm6108.mbin`           | MM6108 SoC firmware (v1.13.1)     | Loaded over SPI at boot |
-| `bcf_mf16858_us.mbin`   | Board config: FGH100M-H, US reg   | Default for XIAO HaLow Hat |
-| `bcf_mf08651_us.mbin`   | Board config: alternate module     | For different module variants |
-| `bcf_mf08551.mbin`      | Board config: non-US variant       | |
-| `bcf_mf08251.mbin`      | Board config: another variant      | |
+### Binary File Formats
+The MM-IoT-SDK uses `.mbin` files (a proprietary packed format). The `morse-firmware` repo
+at https://github.com/MorseMicro/morse-firmware uses `.bin` files (ELF RISC-V format).
+To use `.bin` BCF files from morse-firmware with the MM-IoT-SDK, you must convert them:
+
+```bash
+python3 framework/tools/buildsystem/convert-bin-to-mbin.py INPUT.bin -o OUTPUT.mbin
+```
+
+### BCF Files (Board Configuration Files)
+BCFs contain hardware-specific and regulatory configuration. Using the wrong BCF
+will either crash (`FW manifest pointer not set`) or silently fail to connect
+(radio configured for wrong frequency band).
+
+**Seeed SDK (`~/esp/mm-iot-esp32/framework/morsefirmware/`):**
+| File                    | Module          | Region | Status    |
+|-------------------------|-----------------|--------|-----------|
+| `bcf_mf16858_us.mbin`  | FGH100M-H       | US     | **Working** |
+| `bcf_mf08651_us.mbin`  | MF08651          | US     | Untested  |
+| `bcf_mf08551.mbin`     | MF08551          | Multi  | Untested  |
+| `bcf_mf08251.mbin`     | MF08251          | Multi  | Untested  |
+| `bcf_mf03120.mbin`     | MF03120          | Multi  | Untested  |
+
+**Upstream SDK (`~/esp/mm-iot-esp32-upstream/framework/morsefirmware/mm6108/bcfs/`):**
+| File                    | Module          | Region | Status    |
+|-------------------------|-----------------|--------|-----------|
+| `bcf_mf16858.mbin`     | FGH100M-H       | **Not US** | Loads FW but cannot connect |
+| `bcf_mf08651_us.mbin`  | MF08651          | US     | Not tested with FGH100M-H |
+| `bcf_mf08651_jp.mbin`  | MF08651          | JP     | Untested  |
+
+**Quectel BCFs (from `morse-firmware` repo, need `.bin` -> `.mbin` conversion):**
+| File                     | Module          | Notes |
+|--------------------------|-----------------|-------|
+| `bcf_fgh100mhaamd.bin`  | FGH100M-**H**   | Correct module match; converts but does not connect (may lack US regulatory) |
+| `bcf_fgh100maamd.bin`   | FGH100M-A       | Different module variant |
+| `bcf_fgh100mabmd.bin`   | FGH100M-AB      | Different module variant |
+| `bcf_fgh100mjaamd.bin`  | FGH100M-J       | Different module variant |
+
+### Firmware Files
+| File         | SDK Version    | FW Version | morselib        | Status |
+|--------------|----------------|------------|-----------------|--------|
+| `mm6108.mbin` (Seeed)   | v2.6.4-esp32 | 1.13.1 | 2.6.4-esp32  | **Working** |
+| `mm6108.mbin` (upstream) | v2.10.4-esp32 | 1.17.6 | 2.10.4-esp32 | Loads but connection fails |
+
+**Critical**: Firmware and BCF must be from the same SDK version. Mixing Seeed BCF with
+upstream firmware (or vice versa) causes `FW manifest pointer not set` crash.
 
 ### How Firmware Loading Works
 1. ESP32 holds MM6108 in reset (RESET_N low)
@@ -84,7 +122,66 @@ RESET=3, WAKE=8, BUSY=9. These are for the Morse Micro EKH08 dev board, not the 
 5. MM-IoT-SDK loads `mm6108.mbin` via multi-byte SPI writes
 6. MM-IoT-SDK loads BCF via multi-byte SPI writes
 7. MM6108 boots its internal firmware, SPI clock increases to 40 MHz
-8. Total boot time: ~500ms
+8. Total boot time: ~700ms (to mmwlan_sta_enable call)
+9. WPA3-SAE connection completes ~8-10s after boot
+
+## SDK Compatibility and Patches
+
+### Why Seeed SDK (v2.6.4), not upstream (v2.10.4)
+
+The upstream MM-IoT-SDK v2.10.4 compiles and boots the MM6108 firmware on ESP-IDF 5.5.2,
+but the `bcf_mf16858.mbin` BCF it ships does not have US regulatory settings. The radio
+cannot scan/connect on 902-928 MHz. The Seeed fork v2.6.4 ships `bcf_mf16858_us.mbin`
+which works correctly.
+
+### Required Patches to Seeed SDK for ESP-IDF 5.5.2
+
+The Seeed fork is pinned to ESP-IDF 5.1.1 but works on 5.5.2 with two patches:
+
+**Patch 1: Relax IDF version constraints**
+
+All `idf_component.yml` files under `framework/` contain `version: "==5.1.1"`.
+Change to `version: ">=5.1.1"`:
+
+```bash
+find ~/esp/mm-iot-esp32/framework -name "idf_component.yml" \
+  -exec sed -i 's/version: "==5.1.1"/version: ">=5.1.1"/' {} \;
+```
+
+Files affected (6 total):
+- `framework/morselib/idf_component.yml`
+- `framework/mm_shims/idf_component.yml`
+- `framework/src/mmipal/idf_component.yml`
+- `framework/src/mmutils/idf_component.yml`
+- `framework/src/mmpktmem/idf_component.yml`
+- `framework/src/mmiperf/idf_component.yml`
+
+**Patch 2: Fix `ESP_SYSTEM_INIT_FN` macro for IDF 5.3+**
+
+ESP-IDF 5.3 added a `stage_` parameter to the `ESP_SYSTEM_INIT_FN` macro.
+In `framework/mm_shims/mmosal_shim_freertos_esp32.c`, line 127:
+
+```diff
+-ESP_SYSTEM_INIT_FN(mmosal_dump_failure_info, BIT(0), 999)
++ESP_SYSTEM_INIT_FN(mmosal_dump_failure_info, SECONDARY, BIT(0), 999)
+```
+
+```bash
+sed -i 's/ESP_SYSTEM_INIT_FN(mmosal_dump_failure_info, BIT(0), 999)/ESP_SYSTEM_INIT_FN(mmosal_dump_failure_info, SECONDARY, BIT(0), 999)/' \
+  ~/esp/mm-iot-esp32/framework/mm_shims/mmosal_shim_freertos_esp32.c
+```
+
+### Other SDK Differences
+
+| Feature | Seeed v2.6.4 | Upstream v2.10.4 |
+|---------|-------------|-----------------|
+| Regulatory DB | `mmwlan_regdb.def` (inline header) | `mmregdb` (separate IDF component) |
+| BCF format | Pre-built `.o` objects in mm_shims/ | Runtime objcopy from `.mbin` files |
+| BCF config | Kconfig choice (`CONFIG_MM_BCF_MF16858_US`) | Kconfig string (`CONFIG_MM_BCF_FILE`) |
+| IDF compat | `==5.1.1` (needs patch for 5.5.2) | `>=5.1.1` (native) |
+| FW binary | Pre-built `mm6108.mbin.o` in mm_shims/ | Runtime objcopy from mm6108.mbin |
+| mm_shims source | `mmhal.c`, `wlan_hal.c` | `mmhal_core.c`, `mmhal_os.c`, `mmhal_wlan.c` |
+| `driver` dep | Uses legacy `driver` component | Detects `esp_driver_*` split for IDF 5.3+ |
 
 ## MM-IoT-SDK Architecture
 
@@ -99,15 +196,18 @@ mm-iot-esp32/
 │   │           └── libmorse_nocrypto.a   # ~2.5MB static lib
 │   ├── mm_shims/          # ESP-IDF HAL: SPI, GPIO, FreeRTOS glue
 │   │   ├── Kconfig        # Pin definitions (THIS IS WHERE PINS ARE SET)
-│   │   ├── mmhal_core.c   # SPI bus init, firmware loading
-│   │   ├── mmhal_wlan.c   # WLAN HAL bindings
-│   │   └── mmhal_wlan_binaries.c  # Embeds .mbin files as C arrays
+│   │   ├── mmhal.c        # SPI bus init, firmware loading (Seeed name)
+│   │   ├── wlan_hal.c     # WLAN HAL bindings (Seeed name)
+│   │   ├── mmhal_wlan_binaries.c  # References embedded .mbin.o objects
+│   │   ├── mm6108.mbin.o          # Pre-built firmware object (xtensa ELF)
+│   │   └── bcf_mf16858_us.mbin.o  # Pre-built BCF object (xtensa ELF)
 │   ├── src/
 │   │   ├── mmipal/        # IP abstraction (LWIP netif, DHCP)
 │   │   ├── mmiperf/       # iperf implementation
 │   │   ├── mmpktmem/      # Packet memory manager
 │   │   └── mmutils/       # OS abstraction, config store
-│   └── morsefirmware/     # .mbin firmware files
+│   ├── morsefirmware/     # .mbin firmware files (source for the .o objects)
+│   └── tools/buildsystem/ # convert-bin-to-mbin.py and other tools
 ├── examples/
 │   ├── scan/              # Network scan
 │   ├── sta_connect/       # Basic STA connection
@@ -121,15 +221,15 @@ mm-iot-esp32/
 - `mmipal.h` -- IP layer (init, DHCP, get_ip_config, get_ip6_config)
 - `mmhal.h`  -- Hardware abstraction (init, SPI, GPIO)
 - `mmosal.h` -- OS abstraction (tasks, semaphores, timers)
-- `mmwlan_regdb.def` -- Regulatory database (channel lists per country code)
+- `mmwlan_regdb.def` -- Regulatory database (Seeed: inline header, upstream: separate component)
 
 ### ESP-IDF Component Dependencies
 When building as an ESP-IDF component, the SDK requires:
-- `driver` (SPI, GPIO)
+- `driver` (SPI, GPIO) — or `esp_driver_spi`/`esp_driver_gpio` on IDF 5.3+
 - `freertos`
-- `lwip`
-- `mbedtls` (for crypto, though libmorse_nocrypto.a doesn't use it directly)
-- `nvs_flash` (optional, for config store)
+- `lwip` (with `LWIP_NETIF_STATUS_CALLBACK=1` and `LWIP_NETIF_LINK_CALLBACK=1`)
+- `mbedtls` (for crypto_mbedtls_mm.c shim)
+- `spi_flash`, `app_update`, `log`
 
 ### Required sdkconfig Settings
 ```
@@ -138,6 +238,8 @@ CONFIG_FREERTOS_TIMER_TASK_PRIORITY=10    # Higher than MMOSAL_TASK_PRI_HIGH
 CONFIG_IDF_TARGET="esp32s3"
 CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB=y
 CONFIG_MBEDTLS_NIST_KW_C=y
+CONFIG_LWIP_NETIF_STATUS_CALLBACK=y       # Required by mmipal for DHCP callbacks
+# LWIP_NETIF_LINK_CALLBACK=1              # Set via -D flag (no Kconfig in IDF 5.5)
 ```
 
 ## Available Metrics API
@@ -153,7 +255,7 @@ CONFIG_MBEDTLS_NIST_KW_C=y
 ### IP Stack
 - `mmipal_get_ip_config(struct mmipal_ip_config *)` -> ip_addr, netmask, gateway_addr
 - `mmipal_get_link_packet_counts(uint32_t *tx, uint32_t *rx)` -> packet counters
-- `mmipal_get_link_state()` -> LINK_UP or LINK_DOWN
+- `mmipal_get_link_state()` -> MMIPAL_LINK_UP or MMIPAL_LINK_DOWN
 - `mmipal_get_dns_server(uint8_t index, mmipal_ip_addr_t addr)` -> DNS servers
 
 ### Advanced (not exposed in ESPHome component)
@@ -170,9 +272,16 @@ enum mmwlan_security_type { MMWLAN_OPEN, MMWLAN_OWE, MMWLAN_SAE };
 
 ### Reconnection Flow
 ```c
-mmwlan_sta_disable();   // Brings link down, returns MMWLAN_SUCCESS
+mmwlan_sta_disable();   // Brings link down, returns MMWLAN_SUCCESS or MMWLAN_SHUTDOWN_BLOCKED
 // Then re-call:
 mmwlan_sta_enable(&sta_args, sta_status_cb);  // Starts new connection
+```
+
+### Link State Detection
+The `mmwlan_register_link_state_cb()` callback may not fire reliably on all SDK versions.
+Poll `mmipal_get_link_state()` as a fallback for reliable link detection:
+```c
+bool link_is_up = s_link_up || (mmipal_get_link_state() == MMIPAL_LINK_UP);
 ```
 
 ## mDNS Known Limitation
@@ -181,9 +290,9 @@ mmipal creates a raw LWIP netif (`struct netif`), NOT an `esp_netif_t`. ESP-IDF'
 espressif/mdns component requires `esp_netif_t*` for `mdns_register_netif()`.
 The LWIP netif is static/private inside mmipal — no public getter.
 
-**Current workaround**: mDNS is disabled. Device is reachable by IP address only.
-CONFIG_MDNS_PREDEF_NETIF_STA and CONFIG_ESP_WIFI_ENABLED are set to False to prevent
-the mDNS component from searching for WiFi interfaces that don't exist.
+**Current workaround**: mDNS is not functional. Device is reachable by IP address only.
+The mDNS component initializes but reports `ESP_ERR_INVALID_STATE` because it cannot
+find a registered network interface.
 
 **Future fix options**:
 1. Add `mmipal_get_netif()` upstream and create a minimal `esp_netif_t` wrapper
@@ -198,45 +307,81 @@ components/mm_halow/
 ├── __init__.py              # CONFIG_SCHEMA, to_code(), build flags
 ├── mm_halow_component.h     # Class declaration with sensor pointers
 ├── mm_halow_component.cpp   # MM-IoT-SDK bridge with state machine
-└── pre_build.py             # PlatformIO script: generates firmware .o files
+└── pre_build.py             # PlatformIO script: firmware blob linking
 ```
 
 ### State Machine
 ```
-STOPPED ─── setup() ok ──► CONNECTING ─── link up + IP ──► CONNECTED
-                               ▲  timeout 30s: retry          │
-                               └───────── link drops ──────────┘
+setup() ok ──► CONNECTING ─── link up + IP ──► CONNECTED
+                   ▲  timeout 60s: disable+retry    │
+                   │                                 │
+               STOPPED ◄──── link drops ─────────────┘
+                   │  wait 3s
+                   └──► CONNECTING (auto-reconnect)
 ```
 
-### Build System (solved)
-- `add_idf_component(path=...)` for morselib, mm_shims, mmipal, mmutils, mmpktmem, mmregdb
+### Build System
+- `add_idf_component(path=...)` for morselib, mm_shims, mmipal, mmutils, mmpktmem
+  (and mmregdb if present — upstream SDK only)
 - `add_idf_sdkconfig_option()` for Kconfig (pins, FreeRTOS, BCF, chip type)
-- `pre_build.py` runs ninja to generate objcopy .o files for firmware blobs
-- `env.Append(LINKFLAGS=...)` adds .o files to linker command
-- Uses upstream MorseMicro SDK (supports ESP-IDF >=5.1.1, tested with 5.5.2)
+- `pre_build.py` handles firmware blob linking:
+  - **Upstream SDK**: runs ninja to invoke CMake custom targets (objcopy .mbin -> .o)
+  - **Seeed SDK**: copies pre-built .mbin.o files from mm_shims/ directory
+  - Auto-detects BCF name from Kconfig choice (Seeed) or string (upstream)
+  - Always adds .o paths to `LINKFLAGS` for PlatformIO's SCons linker
+- Uses Seeed MM-IoT-SDK v2.6.4 (with patches for IDF 5.5.2 compatibility)
+
+### Sensors
+All sensors are optional YAML config entries within the `mm_halow:` block:
+
+**Numeric sensors** (`sensor.sensor_schema()`):
+| Config Key    | Unit | Device Class      | Source API |
+|---------------|------|-------------------|------------|
+| `rssi`        | dBm  | signal_strength   | `mmwlan_get_rssi()` |
+| `tx_packets`  | —    | total_increasing  | `mmipal_get_link_packet_counts()` |
+| `rx_packets`  | —    | total_increasing  | `mmipal_get_link_packet_counts()` |
+
+**Text sensors** (`text_sensor.text_sensor_schema()`):
+| Config Key         | Source API |
+|--------------------|------------|
+| `ip_address`       | `mmipal_get_ip_config()` |
+| `gateway_address`  | `mmipal_get_ip_config()` |
+| `subnet_mask`      | `mmipal_get_ip_config()` |
+| `connected_ssid`   | Config value (static) |
+| `bssid`            | `mmwlan_get_bssid()` |
+| `mac_address`      | `mmwlan_get_mac_addr()` |
+| `firmware_version`  | `mmwlan_get_version()` |
+
+Sensors update every 10 seconds while connected. Static values (MAC, FW version, SSID)
+are published once on first connection.
 
 ## Verified Test Results
 
 | Date | Test | Result |
 |------|------|--------|
 | 2026-04-30 | SPI probe (raw SDIO CMD0/CMD5/CMD52) | CCCR registers readable, FBR1 accessible |
-| 2026-04-30 | Network scan | Found halowlink2-627b, RSSI -41 dBm, 8 MHz, SAE |
-| 2026-04-30 | WPA3-SAE connection | Link up in ~8s, STA state transitions clean |
+| 2026-04-30 | Network scan (Seeed SDK, IDF 5.1.1) | Found halowlink2-627b, RSSI -41 dBm, 8 MHz, SAE |
+| 2026-04-30 | WPA3-SAE connection (Seeed SDK, IDF 5.1.1) | Link up in ~8s |
 | 2026-04-30 | DHCP over HaLow | IP 192.168.12.164, GW 192.168.12.1, mask /24 |
 | 2026-04-30 | LWIP + iperf UDP server | Server listening on port 5001, IPv4 + IPv6 |
+| 2026-04-30 | ESPHome compile (Seeed SDK, IDF 5.5.2) | 1.08MB firmware, 59% flash |
+| 2026-04-30 | ESPHome full boot with sensors | All sensors reporting, API+OTA running |
+| 2026-04-30 | Upstream SDK (v2.10.4, IDF 5.5.2) | FW loads but connection fails (BCF issue) |
 
-| 2026-04-30 | ESPHome compile (IDF 5.5.2) | 1.08MB firmware, 59% flash |
-| 2026-04-30 | ESPHome full boot | API (6053) + OTA (3232) over HaLow, DHCP IP |
-
-### Firmware Details (upstream SDK)
+### Working Configuration (Seeed SDK + IDF 5.5.2)
 ```
-Morse firmware version 1.17.6
-morselib version 2.10.4-esp32
+Morse firmware version 1.13.1
+morselib version 2.6.4-esp32
 Morse chip ID 0x306
 Actual SPI CLK 40000kHz
-HaLow MAC: a8:dd:9f:4d:c6:01
-Setup time: 770ms (to mmwlan_sta_enable)
-Link-up time: ~10s from cold boot
+HaLow MAC: A8:DD:9F:4D:C6:01
+Setup time: 718ms (to mmwlan_sta_enable)
+Connection time: ~10s from cold boot
+RSSI: -37 dBm
+DHCP IP: 192.168.12.164
+Gateway: 192.168.12.1
+BSSID: 50:2E:91:D2:C9:E4
+BCF: bcf_mf16858_us.mbin
 ```
 
 ## Development Environment
@@ -244,7 +389,7 @@ Link-up time: ~10s from cold boot
 ### Local Paths
 - Project: `/home/jason/esphome-halow/`
 - ESP-IDF (standalone): `~/esp/esp-idf-v5.1.1/`
-- MM-IoT-SDK (Seeed): `~/esp/mm-iot-esp32/`
+- MM-IoT-SDK (Seeed, patched): `~/esp/mm-iot-esp32/`
 - MM-IoT-SDK (upstream): `~/esp/mm-iot-esp32-upstream/`
 - PlatformIO toolchain: `~/.platformio/packages/toolchain-xtensa-esp-elf/`
 
@@ -254,7 +399,8 @@ Link-up time: ~10s from cold boot
 3. Device appears as `/dev/ttyACM0` (USB JTAG/serial debug)
 
 ## Related Projects
-- [MorseMicro mm-iot-esp32](https://github.com/MorseMicro/mm-iot-esp32) -- Primary SDK (upstream, IDF >=5.1.1)
-- [Seeed mm-iot-esp32](https://github.com/Seeed-Studio/mm-iot-esp32) -- Seeed fork (IDF 5.1.1 only)
-- [Xiao-Halow-to-WiFi-Bridge](https://github.com/gtgreenw/Xiao-Halow-to-WiFi-Bridge) -- ESP32-S3 HaLow bridge with NAT, web config, RSSI monitoring
-- [MorseMicro morse-firmware](https://github.com/MorseMicro/morse-firmware) -- Additional BCF files for Quectel modules
+- [MorseMicro mm-iot-esp32](https://github.com/MorseMicro/mm-iot-esp32) -- Upstream SDK (v2.10.4, IDF >=5.1.1)
+- [Seeed mm-iot-esp32](https://github.com/Seeed-Studio/mm-iot-esp32) -- Seeed fork (v2.6.4, **used with patches**)
+- [MorseMicro morse-firmware](https://github.com/MorseMicro/morse-firmware) -- BCF files for Quectel modules (.bin format, needs conversion)
+- [Xiao-Halow-to-WiFi-Bridge](https://github.com/gtgreenw/Xiao-Halow-to-WiFi-Bridge) -- Community ESP32-S3 HaLow bridge
+- [Morse Micro Community](https://community.morsemicro.com) -- Forum for BCF and SDK questions

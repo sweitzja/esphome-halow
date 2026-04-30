@@ -29,11 +29,19 @@ This component provides a drop-in network interface for ESPHome, replacing `wifi
 
 ### Prerequisites
 - ESPHome 2024.2+ with ESP-IDF framework support
-- [Morse Micro MM-IoT-SDK](https://github.com/MorseMicro/mm-iot-esp32) (upstream, cloned locally)
+- [Seeed MM-IoT-SDK](https://github.com/Seeed-Studio/mm-iot-esp32) (cloned locally, with patches)
 
-Clone the SDK:
+Clone and patch the SDK:
 ```bash
-git clone https://github.com/MorseMicro/mm-iot-esp32.git ~/esp/mm-iot-esp32
+git clone https://github.com/Seeed-Studio/mm-iot-esp32.git ~/esp/mm-iot-esp32
+
+# Patch 1: Relax IDF version constraints (required for ESPHome's IDF 5.5.2)
+find ~/esp/mm-iot-esp32/framework -name "idf_component.yml" \
+  -exec sed -i 's/version: "==5.1.1"/version: ">=5.1.1"/' {} \;
+
+# Patch 2: Fix ESP_SYSTEM_INIT_FN macro for IDF 5.3+
+sed -i 's/ESP_SYSTEM_INIT_FN(mmosal_dump_failure_info, BIT(0), 999)/ESP_SYSTEM_INIT_FN(mmosal_dump_failure_info, SECONDARY, BIT(0), 999)/' \
+  ~/esp/mm-iot-esp32/framework/mm_shims/mmosal_shim_freertos_esp32.c
 ```
 
 ### Example YAML
@@ -57,16 +65,24 @@ mm_halow:
   ssid: "my-halow-ap"
   password: "my-password"
   country_code: "US"
+  security: SAE                        # SAE (WPA3), OWE, or OPEN
+  bcf_file: "bcf_mf16858_us.mbin"     # Board config for FGH100M-H (US)
   mm_iot_sdk_path: "~/esp/mm-iot-esp32"
-  # Pins default to XIAO HaLow Hat mapping. Override for other boards:
-  # clk_pin: 7
-  # mosi_pin: 9
-  # miso_pin: 8
-  # cs_pin: 4
-  # irq_pin: 3
-  # reset_pin: 1
-  # wake_pin: 2
-  # busy_pin: 5
+  # manual_ip:                         # Optional static IP
+  #   static_ip: 192.168.12.100
+  #   gateway: 192.168.12.1
+  #   subnet: 255.255.255.0
+  # Pins default to XIAO HaLow Hat. Override for other boards:
+  # clk_pin: 7  / mosi_pin: 9 / miso_pin: 8 / cs_pin: 4
+  # irq_pin: 3 / reset_pin: 1 / wake_pin: 2 / busy_pin: 5
+
+  # Optional diagnostic sensors
+  rssi:
+    name: "HaLow RSSI"
+  ip_address:
+    name: "HaLow IP"
+  mac_address:
+    name: "HaLow MAC"
 
 api:
 
@@ -128,10 +144,12 @@ The MM6108 has no persistent firmware. Two binary files are embedded in the ESP3
 
 | File | Purpose | Size | Source |
 |------|---------|------|--------|
-| `mm6108.mbin` | MM6108 SoC firmware (v1.17.6) | ~400 KB | MM-IoT-SDK `framework/morsefirmware/` |
-| `bcf_mf16858.mbin` | Board config for FGH100M-H (US regulatory) | ~2 KB | MM-IoT-SDK `framework/morsefirmware/mm6108/bcfs/` |
+| `mm6108.mbin` | MM6108 SoC firmware (v1.13.1) | ~400 KB | Seeed MM-IoT-SDK `framework/morsefirmware/` |
+| `bcf_mf16858_us.mbin` | Board config for FGH100M-H (US regulatory) | ~344 B | Seeed MM-IoT-SDK `framework/morsefirmware/` |
 
-Other BCF files are available for different modules and regulatory domains.
+**Important**: Firmware and BCF must be from the same SDK version. The Seeed SDK v2.6.4
+ships matching files that work together. See [HALOW_NOTES.md](HALOW_NOTES.md) for BCF
+compatibility details and other available BCF files.
 
 ## Verified Test Results
 
@@ -140,13 +158,13 @@ All testing performed with XIAO ESP32-S3 + XIAO HaLow Hat + GL-iNet HaLowLink 2:
 | Test | Result |
 |------|--------|
 | SPI communication (SDIO registers) | Pass -- CCCR and FBR registers readable |
-| MM6108 firmware boot | Pass -- FW v1.17.6, morselib v2.10.4-esp32, chip ID 0x306 |
+| MM6108 firmware boot | Pass -- FW v1.13.1, morselib v2.6.4-esp32, chip ID 0x306 |
 | HaLow network scan | Pass -- Found AP at -41 dBm, 8 MHz BW |
 | WPA3-SAE authentication | Pass -- Link up in ~10 seconds |
 | DHCP IP acquisition | Pass -- 192.168.12.164 from gateway 192.168.12.1 |
 | LWIP TCP/UDP stack | Pass -- iperf server operational |
-| ESPHome compile | Pass -- 1.08MB firmware, 59% flash usage |
-| **ESPHome full boot** | **Pass** -- API server + OTA over HaLow, DHCP IP acquired |
+| ESPHome compile (IDF 5.5.2) | Pass -- 1.08MB firmware, 59% flash usage |
+| **ESPHome full boot with sensors** | **Pass** -- RSSI (-37 dBm), IP, MAC, BSSID, FW version all reporting |
 
 ## Component Configuration
 
@@ -154,6 +172,9 @@ All testing performed with XIAO ESP32-S3 + XIAO HaLow Hat + GL-iNet HaLowLink 2:
 |--------|------|---------|-------------|
 | `ssid` | string | **required** | HaLow AP SSID |
 | `password` | string | **required** | WPA3-SAE passphrase |
+| `security` | enum | `SAE` | Security type: `SAE` (WPA3), `OWE`, or `OPEN` |
+| `bcf_file` | string | `bcf_mf16858_us.mbin` | Board configuration file |
+| `manual_ip` | schema | *(DHCP)* | Static IP config (static_ip, gateway, subnet, dns1, dns2) |
 | `country_code` | string | `"US"` | Regulatory domain (US, AU, EU, JP, etc.) |
 | `clk_pin` | int | `7` | SPI clock GPIO |
 | `mosi_pin` | int | `9` | SPI MOSI GPIO |
@@ -178,8 +199,9 @@ The SDK is licensed under Apache-2.0 (shims/examples) and a Morse Micro BDL (bin
 
 ## References
 
-- [Morse Micro MM-IoT-SDK](https://github.com/MorseMicro/mm-iot-esp32) -- Primary SDK (upstream, supports ESP-IDF >=5.1.1)
-- [Seeed MM-IoT-SDK fork](https://github.com/Seeed-Studio/mm-iot-esp32) -- Seeed's fork (pinned to ESP-IDF 5.1.1)
+- [Seeed MM-IoT-SDK](https://github.com/Seeed-Studio/mm-iot-esp32) -- **Used by this component** (v2.6.4, with patches for IDF 5.5.2)
+- [Morse Micro MM-IoT-SDK](https://github.com/MorseMicro/mm-iot-esp32) -- Upstream (v2.10.4, IDF >=5.1.1, but US BCF missing)
+- [Morse Micro morse-firmware](https://github.com/MorseMicro/morse-firmware) -- Additional BCF files for Quectel modules
 - [Morse Micro MM6108 Datasheet](https://www.morsemicro.com/chips/) -- SoC specifications
 - [Seeed Wiki: Getting Started with Wi-Fi HaLow](https://wiki.seeedstudio.com/getting_started_with_wifi_halow_module_for_xiao/) -- Hardware setup guide
 - [IEEE 802.11ah Standard](https://en.wikipedia.org/wiki/IEEE_802.11ah) -- Wi-Fi HaLow specification
