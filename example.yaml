@@ -66,3 +66,18 @@ ota:
 sensor:
   - platform: uptime
     name: Uptime
+  - platform: template
+    name: "Free Heap"
+    lambda: 'return esp_get_free_heap_size();'
+    unit_of_measurement: "bytes"
+    update_interval: 30s
+    entity_category: diagnostic
+  - platform: template
+    name: "Min Free Heap"
+    lambda: 'return esp_get_minimum_free_heap_size();'
+    unit_of_measurement: "bytes"
+    update_interval: 30s
+    entity_category: diagnostic
+
+debug:
+  update_interval: 30s
