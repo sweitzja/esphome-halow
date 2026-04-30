@@ -290,10 +290,22 @@ async def to_code(config):
     add_idf_sdkconfig_option("CONFIG_LWIP_NETIF_STATUS_CALLBACK", True)
     cg.add_build_flag("-DLWIP_NETIF_LINK_CALLBACK=1")
 
-    # Note: CONFIG_ESP_WIFI_ENABLED cannot be disabled — the MM-IoT-SDK's
-    # SPI driver may depend on WiFi coexistence infrastructure internally.
-    # mDNS will fail (ESP_ERR_INVALID_STATE) because there's no esp_netif
-    # registered for the HaLow interface. This is a known limitation.
+    # Disable mDNS predefined netif search — we register our own netif manually.
+    # Without this, mdns_init() tries to register WiFi/ETH event handlers which
+    # fail because no standard WiFi or Ethernet driver is active.
+    add_idf_sdkconfig_option("CONFIG_MDNS_PREDEF_NETIF_STA", False)
+    add_idf_sdkconfig_option("CONFIG_MDNS_PREDEF_NETIF_AP", False)
+    add_idf_sdkconfig_option("CONFIG_MDNS_PREDEF_NETIF_ETH", False)
+
+    # Include path for esp_netif internal header (needed for mDNS netif wrapper).
+    # The esp_netif_lwip_internal.h header defines struct esp_netif_obj which we
+    # need to create a minimal wrapper around mmipal's raw LWIP netif.
+    esp_netif_internal = os.path.join(
+        os.path.expanduser("~/.platformio"), "packages", "framework-espidf",
+        "components", "esp_netif", "lwip"
+    )
+    if os.path.isdir(esp_netif_internal):
+        cg.add_build_flag(f"-I{esp_netif_internal}")
 
     # PlatformIO extra script for firmware blob generation
     cg.add_platformio_option(

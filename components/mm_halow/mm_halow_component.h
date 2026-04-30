@@ -72,6 +72,7 @@ class MMHalowComponent : public Component {
   void start_connect_();
   bool check_ip_();
   void update_sensors_();
+  void start_mdns_();
 
   // Config
   std::string ssid_;
@@ -103,6 +104,7 @@ class MMHalowComponent : public Component {
   uint32_t last_sensor_update_{0};
   uint32_t reconnect_count_{0};
   bool setup_complete_{false};
+  bool mdns_started_{false};
   network::IPAddresses ip_addresses_{};
 
   // Sensors

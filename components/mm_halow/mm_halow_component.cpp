@@ -25,6 +25,16 @@ extern "C" {
 #endif
 }
 
+// ESP-IDF headers for mDNS integration
+extern "C" {
+#include "lwip/netif.h"
+#include "mdns.h"
+// Internal header for esp_netif_obj struct layout — needed to create
+// a minimal wrapper around mmipal's raw LWIP netif for mDNS registration.
+// The struct layout has been stable since ESP-IDF v4.x.
+#include "esp_netif_lwip_internal.h"
+}
+
 namespace esphome {
 namespace mm_halow {
 
@@ -163,12 +173,9 @@ void MMHalowComponent::start_connect_() {
     sta_args.security_type = MMWLAN_SAE;
   }
 
-  ESP_LOGI(TAG, "Connecting to '%s' (%s) ssid_len=%d pass_len=%d...",
-           this->ssid_.c_str(), this->security_type_.c_str(),
-           sta_args.ssid_len, sta_args.passphrase_len);
+  ESP_LOGI(TAG, "Connecting to '%s' (%s)...", this->ssid_.c_str(), this->security_type_.c_str());
 
   enum mmwlan_status status = mmwlan_sta_enable(&sta_args, sta_status_cb);
-  ESP_LOGI(TAG, "mmwlan_sta_enable returned %d", status);
   if (status != MMWLAN_SUCCESS) {
     ESP_LOGE(TAG, "STA enable failed: %d", status);
     return;
@@ -197,20 +204,17 @@ void MMHalowComponent::loop() {
 
   switch (this->state_) {
     case HalowState::CONNECTING: {
-      // Check link via both callback flag AND direct poll
+      // Check link via both callback flag AND direct mmipal poll
       bool link_is_up = s_link_up || (mmipal_get_link_state() == MMIPAL_LINK_UP);
-      // Periodic debug log during connection
-      if ((millis() - this->connect_start_time_) % 10000 < 50) {
-        ESP_LOGD(TAG, "Waiting for link... s_link_up=%d mmipal=%d elapsed=%lums",
-                 (int) s_link_up, (int)(mmipal_get_link_state() == MMIPAL_LINK_UP),
-                 millis() - this->connect_start_time_);
-      }
       if (link_is_up && this->check_ip_()) {
         // Connected and got IP
         this->state_ = HalowState::CONNECTED;
         this->reconnect_count_ = 0;
         ESP_LOGI(TAG, "HaLow connected to '%s'", this->ssid_.c_str());
         this->last_sensor_update_ = 0;  // Force immediate sensor update
+        if (!this->mdns_started_) {
+          this->start_mdns_();
+        }
       } else if (millis() - this->connect_start_time_ > CONNECT_TIMEOUT_MS) {
         // Timeout — disable STA and schedule retry
         this->reconnect_count_++;
@@ -316,6 +320,82 @@ void MMHalowComponent::update_sensors_() {
     }
   }
 #endif
+}
+
+void MMHalowComponent::start_mdns_() {
+  // Find mmipal's LWIP netif by matching HaLow MAC address
+  uint8_t mac[6];
+  if (mmwlan_get_mac_addr(mac) != MMWLAN_SUCCESS) {
+    ESP_LOGW(TAG, "mDNS: could not get MAC address");
+    return;
+  }
+
+  struct netif *mm_netif = nullptr;
+  for (struct netif *nif = netif_list; nif != nullptr; nif = nif->next) {
+    if (memcmp(nif->hwaddr, mac, 6) == 0) {
+      mm_netif = nif;
+      break;
+    }
+  }
+  if (mm_netif == nullptr) {
+    ESP_LOGW(TAG, "mDNS: could not find HaLow LWIP netif");
+    return;
+  }
+
+  // Create a minimal esp_netif_obj wrapper around the raw LWIP netif.
+  // mdns_register_netif() stores this pointer and later calls
+  // esp_netif_get_ip_info() which reads from esp_netif->lwip_netif.
+  auto *fake = (struct esp_netif_obj *) calloc(1, sizeof(struct esp_netif_obj));
+  if (fake == nullptr) {
+    ESP_LOGW(TAG, "mDNS: alloc failed");
+    return;
+  }
+  fake->lwip_netif = mm_netif;
+  fake->flags = (esp_netif_flags_t)(ESP_NETIF_FLAG_AUTOUP);
+  fake->if_key = strdup("MM_HALOW_DEF");
+  fake->if_desc = strdup("mm_halow");
+  fake->route_prio = 50;
+
+  // Initialize mDNS. ESPHome's mdns component may have already tried and failed
+  // (because there was no esp_netif registered at that time). We free any failed
+  // state and reinitialize.
+  mdns_free();  // Clean up ESPHome's failed init attempt
+  esp_err_t err = mdns_init();
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "mDNS init failed: %s", esp_err_to_name(err));
+    free(fake->if_key);
+    free(fake->if_desc);
+    free(fake);
+    return;
+  }
+
+  // Set hostname
+  mdns_hostname_set(App.get_name().c_str());
+
+  // Register our fake netif with mDNS
+  err = mdns_register_netif((esp_netif_t *) fake);
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "mDNS register netif failed: %s", esp_err_to_name(err));
+    free(fake->if_key);
+    free(fake->if_desc);
+    free(fake);
+    return;
+  }
+
+  // Enable mDNS on this interface
+  err = mdns_netif_action((esp_netif_t *) fake, MDNS_EVENT_ENABLE_IP4);
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "mDNS enable IPv4 failed: %s", esp_err_to_name(err));
+  }
+
+  // Announce the IP
+  err = mdns_netif_action((esp_netif_t *) fake, MDNS_EVENT_ANNOUNCE_IP4);
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "mDNS announce failed: %s", esp_err_to_name(err));
+  }
+
+  ESP_LOGI(TAG, "mDNS: registered '%s.local' on HaLow interface", App.get_name().c_str());
+  this->mdns_started_ = true;
 }
 
 void MMHalowComponent::dump_config() {
