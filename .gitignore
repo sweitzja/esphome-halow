@@ -1,0 +1,29 @@
+# Build
+build/
+sdkconfig
+sdkconfig.old
+managed_components/
+
+# ESP-IDF
+dependencies.lock
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Secrets
+secrets.yaml
+*.pem
+*.key
