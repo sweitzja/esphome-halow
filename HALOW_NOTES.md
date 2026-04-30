@@ -1,129 +1,219 @@
-# ESPHome HaLow Component - Project Notes
+# Engineering Notes - ESPHome Wi-Fi HaLow Component
 
-## Goal
-Build an ESPHome external component that enables IEEE 802.11ah (Wi-Fi HaLow) connectivity
-via the Seeed XIAO HaLow Hat (WIO-WM6180) on an XIAO ESP32-S3.
+## Overview
 
-## Hardware
+IEEE 802.11ah (Wi-Fi HaLow) operates in sub-1 GHz spectrum (902-928 MHz in North America)
+for long-range, low-power IoT connectivity. This project wraps the Morse Micro MM-IoT-SDK
+into an ESPHome external component, providing a `mm_halow:` config block analogous to `wifi:`
+or `ethernet:` (W5500).
 
-### XIAO ESP32-S3
-- Espressif ESP32-S3 (Xtensa dual-core)
-- USB-C with native USB JTAG/serial debug
-- VID:PID 303a:1001
-- Appears as `/dev/ttyACM0` in WSL2 (via usbipd)
+## Hardware Stack
 
-### XIAO HaLow Hat (WIO-WM6180)
-- Morse Micro MM6108 SoC (IEEE 802.11ah)
-- Sub-1 GHz (902-928 MHz in North America)
-- Interface: **SPI** from ESP32-S3 to MM6108
+### Morse Micro MM6108 SoC
+- Single-chip 802.11ah solution with integrated MAC/PHY/radio
+- Sub-1 GHz: 902-928 MHz (US/AU), 863-868 MHz (EU), 916.5-927.5 MHz (JP)
+- Channel widths: 1, 2, 4, 8 MHz
+- Max data rate: 32.5 Mbps (8 MHz, MCS10)
+- Typical range: 100m-1km (depending on environment and data rate)
+- Interface to host: SDIO-over-SPI (up to 50 MHz, typically 40 MHz)
+- No persistent firmware -- host loads FW + BCF over SPI at every boot
+- Security: WPA3-SAE (primary), OWE, Open
+- Chip ID observed: 0x306
+
+### Seeed XIAO HaLow Hat (WIO-WM6180)
+- Contains Quectel FGH100M-H module (MM6108 inside)
+- Designed to stack on XIAO ESP32-S3
 - 3.3V operation
-- Quectel FGH100M-H module inside
+- SMA antenna connector (external antenna)
+- Pin mapping defined in Seeed's mm-iot-esp32 Kconfig fork
 
-### GL-iNet HaLowLink 2
-- Wi-Fi HaLow access point (MM8108-based)
-- Up to 1 km range, 1000 devices
+### Seeed XIAO ESP32-S3
+- ESP32-S3 (QFN56), revision v0.2
+- Dual-core Xtensa LX7 @ 240 MHz
+- 8 MB PSRAM, 8 MB flash (GD chip)
+- USB-C with native USB JTAG/serial debug (VID:PID 303a:1001)
+- MAC: d8:3b:da:45:55:08
+
+### GL-iNet HaLowLink 2 (Test AP)
+- Model: MM-HL2-EXT (HW v0.1)
+- MAC: 50:2E:91:D2:C9:E4
+- MM8108-based (802.11ah AP + 2.4 GHz Wi-Fi bridge)
 - OpenWrt 23.05
-- 750-950 MHz, channel widths 1/2/4/8 MHz
-- Also bridges to 2.4 GHz Wi-Fi
+- Default IP: 192.168.12.1
+- DHCP range: 192.168.12.x
+- Security: WPA3-SAE
+- Management: root / (see device label) at 192.168.12.1
 
-## Pin Mapping: ESP32-S3 ↔ MM6108 (via HaLow Hat)
+## Pin Mapping: ESP32-S3 to MM6108
 
-**VERIFIED** from Seeed's mm-iot-esp32 fork Kconfig defaults
-(https://github.com/Seeed-Studio/mm-iot-esp32/blob/main/framework/mm_shims/Kconfig):
+**Source**: [Seeed mm-iot-esp32 Kconfig](https://github.com/Seeed-Studio/mm-iot-esp32/blob/main/framework/mm_shims/Kconfig)
 
-| Function   | ESP32-S3 GPIO | XIAO Pin | Notes                          |
-|------------|---------------|----------|--------------------------------|
-| SPI SCK    | GPIO 7        | D8       | SPI clock                      |
-| SPI MISO   | GPIO 8        | D9       | Master In Slave Out            |
-| SPI MOSI   | GPIO 9        | D10      | Master Out Slave In            |
-| SPI CS     | GPIO 4        | D4/A4    | Chip select                    |
-| SPI IRQ    | GPIO 3        | D3/A3    | Out-of-band interrupt (data ready)|
-| RESET_N    | GPIO 1        | D1/A1    | Module reset (active low)      |
-| WAKE       | GPIO 2        | D2/A2    | Wake signal                    |
-| BUSY       | GPIO 5        | D5/A5    | Rising edge interrupt          |
+These are the Kconfig *defaults* in the Seeed fork, which differ from the upstream
+Morse Micro defaults. Verified working with XIAO ESP32-S3 + XIAO HaLow Hat.
 
-### BCF (Board Configuration File)
-- Default: `bcf_mf16858_us.mbin` (for WM6180 / FGH100M-H module)
-- Firmware: `mm6108.mbin`
-- Chip type: MM6108
+| Function   | ESP32-S3 GPIO | XIAO Silk | Kconfig Key     | Notes                          |
+|------------|---------------|-----------|-----------------|--------------------------------|
+| SPI SCK    | GPIO 7        | D8        | MM_SPI_SCK      | SPI clock                      |
+| SPI MISO   | GPIO 8        | D9        | MM_SPI_MISO     | Master In Slave Out            |
+| SPI MOSI   | GPIO 9        | D10       | MM_SPI_MOSI     | Master Out Slave In            |
+| SPI CS     | GPIO 4        | D4        | MM_SPI_CS       | Chip select (active low)       |
+| SPI IRQ    | GPIO 3        | D3        | MM_SPI_IRQ      | Out-of-band data-ready interrupt|
+| RESET_N    | GPIO 1        | D1        | MM_RESET_N      | Module reset (active low)      |
+| WAKE       | GPIO 2        | D2        | MM_WAKE         | Wake signal                    |
+| BUSY       | GPIO 5        | D5        | MM_BUSY         | Rising edge interrupt          |
 
-## SDK / Firmware
+**Upstream (Morse Micro) defaults are different**: SCK=12, MOSI=11, MISO=13, CS=10, IRQ=5,
+RESET=3, WAKE=8, BUSY=9. These are for the Morse Micro EKH08 dev board, not the XIAO hat.
 
-### Morse Micro MM-IoT-SDK
-- ESP-IDF based SDK for MM6108/MM8108
-- Upstream: https://github.com/MorseMicro/mm-iot-esp32
-- Seeed fork: https://github.com/Seeed-Studio/mm-iot-esp32 (used for this project)
-- Requires ESP-IDF v5.1.1 (Seeed fork pinned to this version)
-- Local installs:
-  - ESP-IDF: `~/esp/esp-idf-v5.1.1/`
-  - MM-IoT-SDK: `~/esp/mm-iot-esp32/`
-- Board Config Files (BCF): binary blobs loaded onto MM6108 at init
-  - Located in `framework/morsefirmware/` directory
-- MM6108 has NO persistent firmware — ESP32 must load fw+bcf over SPI every boot
+## Firmware and Board Configuration
 
-### Morse Firmware (BCF files)
-- https://github.com/MorseMicro/morse-firmware/tree/main/bcf/quectel
-- FGH100M variants: bcf_fgh100maamd.bin, bcf_fgh100mabmd.bin, etc.
+### Binary Files (from MM-IoT-SDK `framework/morsefirmware/`)
+| File                    | Purpose                           | Notes |
+|-------------------------|-----------------------------------|-------|
+| `mm6108.mbin`           | MM6108 SoC firmware (v1.13.1)     | Loaded over SPI at boot |
+| `bcf_mf16858_us.mbin`   | Board config: FGH100M-H, US reg   | Default for XIAO HaLow Hat |
+| `bcf_mf08651_us.mbin`   | Board config: alternate module     | For different module variants |
+| `bcf_mf08551.mbin`      | Board config: non-US variant       | |
+| `bcf_mf08251.mbin`      | Board config: another variant      | |
 
-### Related Projects
-- **Xiao-Halow-to-WiFi-Bridge**: https://github.com/gtgreenw/Xiao-Halow-to-WiFi-Bridge
-  - Existing project doing similar ESP32-S3 + WM6180 work
-  - Good reference for pin configs and initialization
+### How Firmware Loading Works
+1. ESP32 holds MM6108 in reset (RESET_N low)
+2. ESP32 releases reset, asserts WAKE
+3. ESP32 initializes SPI bus at 400 kHz, sends init clocks
+4. SDIO-over-SPI initialization (CMD0, CMD5, CMD52)
+5. MM-IoT-SDK loads `mm6108.mbin` via multi-byte SPI writes
+6. MM-IoT-SDK loads BCF via multi-byte SPI writes
+7. MM6108 boots its internal firmware, SPI clock increases to 40 MHz
+8. Total boot time: ~500ms
 
-## Project Plan
+## MM-IoT-SDK Architecture
 
-### Phase 1: Hardware Verification (current)
-1. ✅ Connect ESP32-S3 via USB serial
-2. ✅ Verify SPI communication with MM6108 (SDIO registers readable)
-3. ✅ Scan for HaLow networks — found HaLowLink 2!
-   - SSID: halowlink2-627b, BSSID: 50:2e:91:d2:c9:e4
-   - RSSI: -41 dBm, BW: 8 MHz, Security: SAE (WPA3)
-   - Morse FW v1.13.1, morselib v2.6.4-esp32, chip ID 0x306
+### Repository Structure (Seeed fork)
+```
+mm-iot-esp32/
+├── framework/
+│   ├── morselib/          # Prebuilt binary library
+│   │   ├── include/       # Public API headers (mmwlan.h, mmipal.h, etc.)
+│   │   └── lib/
+│   │       └── esp32-xtensa-lx7/
+│   │           └── libmorse_nocrypto.a   # ~2.5MB static lib
+│   ├── mm_shims/          # ESP-IDF HAL: SPI, GPIO, FreeRTOS glue
+│   │   ├── Kconfig        # Pin definitions (THIS IS WHERE PINS ARE SET)
+│   │   ├── mmhal_core.c   # SPI bus init, firmware loading
+│   │   ├── mmhal_wlan.c   # WLAN HAL bindings
+│   │   └── mmhal_wlan_binaries.c  # Embeds .mbin files as C arrays
+│   ├── src/
+│   │   ├── mmipal/        # IP abstraction (LWIP netif, DHCP)
+│   │   ├── mmiperf/       # iperf implementation
+│   │   ├── mmpktmem/      # Packet memory manager
+│   │   └── mmutils/       # OS abstraction, config store
+│   └── morsefirmware/     # .mbin firmware files
+├── examples/
+│   ├── scan/              # Network scan
+│   ├── sta_connect/       # Basic STA connection
+│   ├── iperf/             # Full LWIP + DHCP + iperf
+│   └── porting_assistant/ # Hardware verification tool
+└── documentation.html     # Full API docs
+```
 
-### Phase 2: Network Connectivity
-4. ✅ Connect to HaLowLink 2 AP
-   - WPA3-SAE auth successful with `your-password-here`
-   - Link up in ~8 seconds from boot
-   - ARP test packet sent successfully
-5. ✅ Test IP connectivity (iperf example with LWIP + DHCP)
-   - DHCP acquired IP: 192.168.12.164 from gateway 192.168.12.1
-   - MAC: a8:dd:9f:4d:c6:01
-   - Full LWIP stack operational, iperf UDP server running
-6. ⬜ Characterize range and throughput
+### Key API Headers
+- `mmwlan.h` -- WLAN control (boot, connect, scan, TX/RX)
+- `mmipal.h` -- IP layer (init, DHCP, get_ip_config, get_ip6_config)
+- `mmhal.h`  -- Hardware abstraction (init, SPI, GPIO)
+- `mmosal.h` -- OS abstraction (tasks, semaphores, timers)
+- `mmwlan_regdb.def` -- Regulatory database (channel lists per country code)
 
-### Phase 3: ESPHome Integration
-7. ✅ Create ESPHome external component structure (components/mm_halow/)
-8. ⬜ Integrate MM-IoT-SDK build into ESPHome (link morselib, mm_shims, mbin blobs)
-9. ⬜ Test compile and flash via ESPHome
-10. ⬜ Verify HaLow connectivity under ESPHome
-11. ⬜ Test with Home Assistant (API + OTA over HaLow)
+### ESP-IDF Component Dependencies
+When building as an ESP-IDF component, the SDK requires:
+- `driver` (SPI, GPIO)
+- `freertos`
+- `lwip`
+- `mbedtls` (for crypto, though libmorse_nocrypto.a doesn't use it directly)
+- `nvs_flash` (optional, for config store)
 
-## ESPHome Component Architecture
+### Required sdkconfig Settings
+```
+CONFIG_FREERTOS_HZ=1000
+CONFIG_FREERTOS_TIMER_TASK_PRIORITY=10    # Higher than MMOSAL_TASK_PRI_HIGH
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB=y
+CONFIG_MBEDTLS_NIST_KW_C=y
+```
 
+## ESPHome Integration Architecture
+
+### Component Design (modeled after ethernet/W5500)
 ```
 components/mm_halow/
-├── __init__.py              # YAML schema, code generation
-├── mm_halow_component.h     # Component class declaration
-└── mm_halow_component.cpp   # MM-IoT-SDK bridge implementation
+├── __init__.py              # CONFIG_SCHEMA, to_code(), build flags
+├── mm_halow_component.h     # Class declaration
+└── mm_halow_component.cpp   # MM-IoT-SDK bridge
 ```
 
-- Replaces `wifi:` in YAML config with `mm_halow:`
-- Uses `CONFLICTS_WITH = ["wifi"]`, `AUTO_LOAD = ["network"]`
-- Component priority: `setup_priority::WIFI`
-- SPI/firmware managed by MM-IoT-SDK (not ESPHome's SPI component)
-- DHCP via mmipal (MM-IoT-SDK's LWIP wrapper)
-- setup(): mmhal_init -> mmwlan_init -> mmwlan_boot -> mmwlan_sta_enable
-- loop(): polls link state and IP from mmipal
+### Class: `MMHalowComponent : public Component`
+- `setup()` -- mmhal_init -> mmwlan_init -> mmwlan_boot -> mmipal_init -> mmwlan_sta_enable
+- `loop()` -- poll link state (volatile bool from callback), poll IP via mmipal_get_ip_config
+- `get_setup_priority()` -- returns `setup_priority::WIFI`
+- `get_ip_addresses()` -- returns `network::IPAddresses`
+- `is_connected()` -- returns link state
+- `dump_config()` -- logs SSID, country, pins, IP
+- `AUTO_LOAD = ["network"]`, `CONFLICTS_WITH = ["wifi"]`
 
-### Build Integration (TODO)
-- ESPHome must use `framework: esp-idf` with version 5.1.1
-- Need to link: morselib (libmorse_nocrypto.a), mm_shims, mmipal, mmutils
-- Need to embed: mm6108.mbin, bcf_mf16858_us.mbin
-- Kconfig overrides for pin mapping and FreeRTOS config
+### Callback Architecture
+MM-IoT-SDK callbacks fire from internal FreeRTOS tasks, not the main loop.
+We use volatile bools as flags and poll them in loop():
+- `link_state_cb()` -- sets `s_link_up` flag
+- `sta_status_cb()` -- sets `s_sta_connected` flag
+- `loop()` -- reads flags, calls `mmipal_get_ip_config()` for IP
 
-## Key Challenges
-- Linking MM-IoT-SDK's prebuilt libraries into ESPHome's build system
-- Embedding firmware binary blobs (mm6108.mbin, bcf_mf16858_us.mbin) 
-- Coexistence of MM-IoT-SDK's LWIP instance with ESPHome's network stack
-- BUSY pin may not be wired on HaLow Hat - need to handle power save carefully
-- Stack size requirements for Morse Micro SDK (similar to BMV080 experience)
+### Build System Integration (the hard part)
+ESPHome generates a PlatformIO/ESP-IDF build. We need to:
+1. Add MM-IoT-SDK components to `EXTRA_COMPONENT_DIRS` or vendor them
+2. Link `libmorse_nocrypto.a` (prebuilt for xtensa-lx7)
+3. Embed `.mbin` files (mm6108.mbin, bcf_mf16858_us.mbin) as linked objects
+4. Set Kconfig overrides for pin mapping
+5. Set FreeRTOS config (HZ=1000, timer priority=10)
+
+Options for including MM-IoT-SDK:
+- **Option A**: Git submodule in the component (cleanest, but large)
+- **Option B**: Point to local clone via environment variable
+- **Option C**: IDF component registry (if/when published)
+- **Option D**: Vendor the minimum required files (~3MB)
+
+## Verified Test Results
+
+| Date | Test | Result |
+|------|------|--------|
+| 2026-04-30 | SPI probe (raw SDIO CMD0/CMD5/CMD52) | CCCR registers readable, FBR1 accessible |
+| 2026-04-30 | Network scan | Found halowlink2-627b, RSSI -41 dBm, 8 MHz, SAE |
+| 2026-04-30 | WPA3-SAE connection | Link up in ~8s, STA state transitions clean |
+| 2026-04-30 | DHCP over HaLow | IP 192.168.12.164, GW 192.168.12.1, mask /24 |
+| 2026-04-30 | LWIP + iperf UDP server | Server listening on port 5001, IPv4 + IPv6 |
+
+### Observed Firmware Details
+```
+Morse firmware version 1.13.1
+morselib version 2.6.4-esp32
+Morse chip ID 0x306
+Actual SPI CLK 40000kHz
+HaLow MAC: a8:dd:9f:4d:c6:01
+```
+
+## Development Environment
+
+### Local Paths
+- Project: `/home/jason/esphome-halow/`
+- ESP-IDF: `~/esp/esp-idf-v5.1.1/`
+- MM-IoT-SDK: `~/esp/mm-iot-esp32/`
+- Toolchain: `~/.espressif/tools/xtensa-esp32s3-elf/esp-12.2.0_20230208/`
+
+### Serial Access (WSL2)
+1. In Windows PowerShell (admin): `usbipd attach --wsl --busid 5-2`
+2. In WSL: `sudo chmod 666 /dev/ttyACM0` (or add user to `dialout` group)
+3. Device appears as `/dev/ttyACM0` (USB JTAG/serial debug)
+
+## Related Projects
+- [Seeed mm-iot-esp32](https://github.com/Seeed-Studio/mm-iot-esp32) -- SDK we build against
+- [MorseMicro mm-iot-esp32](https://github.com/MorseMicro/mm-iot-esp32) -- Upstream SDK
+- [Xiao-Halow-to-WiFi-Bridge](https://github.com/gtgreenw/Xiao-Halow-to-WiFi-Bridge) -- ESP32-S3 HaLow bridge with NAT, web config, RSSI monitoring
+- [MorseMicro morse-firmware](https://github.com/MorseMicro/morse-firmware) -- Additional BCF files for Quectel modules
