@@ -7,6 +7,9 @@ managed_components/
 # PlatformIO
 .pio/
 
+# ESPHome
+.esphome/
+
 # ESP-IDF
 dependencies.lock
 

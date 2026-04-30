@@ -20,7 +20,7 @@ extern "C" {
 #include "mmosal.h"
 #include "mmwlan.h"
 #include "mmipal.h"
-#include "mmwlan_regdb.def"
+#include "mmregdb.h"
 }
 
 namespace esphome {
@@ -168,7 +168,7 @@ void MMHalowComponent::check_ip_() {
     this->got_ip_ = true;
     this->ip_addresses_[0] = network::IPAddress(ip_config.ip_addr);
     ESP_LOGI(TAG, "Got IP: %s, Gateway: %s, Netmask: %s",
-             ip_config.ip_addr, ip_config.gateway, ip_config.netmask);
+             ip_config.ip_addr, ip_config.gateway_addr, ip_config.netmask);
   }
 }
 
@@ -207,7 +207,9 @@ void MMHalowComponent::dump_config() {
 
 std::string MMHalowComponent::get_ip_address_str() const {
   if (this->ip_addresses_[0].is_set()) {
-    return this->ip_addresses_[0].str();
+    char buf[64];
+    this->ip_addresses_[0].str_to(buf);
+    return std::string(buf);
   }
   return "0.0.0.0";
 }

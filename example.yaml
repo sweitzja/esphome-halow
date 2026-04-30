@@ -1,19 +1,12 @@
 esphome:
   name: halow-test
   friendly_name: HaLow Test Device
-  platformio_options:
-    # MM-IoT-SDK framework paths
-    build_flags:
-      - "-I$HOME/esp/mm-iot-esp32/framework/morselib/include"
-      - "-I$HOME/esp/mm-iot-esp32/framework/mm_shims"
-      - "-I$HOME/esp/mm-iot-esp32/framework/src/mmipal/include"
-      - "-I$HOME/esp/mm-iot-esp32/framework/src/mmutils/include"
 
 esp32:
   board: seeed_xiao_esp32s3
   framework:
     type: esp-idf
-    version: "5.1.1"
+    version: recommended
 
 # Use the local external component
 external_components:
@@ -26,7 +19,9 @@ mm_halow:
   ssid: "halowlink2-627b"
   password: "your-password-here"
   country_code: "US"
-  # Pin defaults match XIAO HaLow Hat, override if needed:
+  # Path to local MM-IoT-SDK clone (Seeed fork)
+  mm_iot_sdk_path: "~/esp/mm-iot-esp32-upstream"
+  # Pin defaults match XIAO HaLow Hat -- override for other boards:
   # clk_pin: 7
   # mosi_pin: 9
   # miso_pin: 8
