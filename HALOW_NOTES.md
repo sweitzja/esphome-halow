@@ -284,20 +284,57 @@ Poll `mmipal_get_link_state()` as a fallback for reliable link detection:
 bool link_is_up = s_link_up || (mmipal_get_link_state() == MMIPAL_LINK_UP);
 ```
 
-## mDNS Known Limitation
+## mDNS Integration (solved)
 
-mmipal creates a raw LWIP netif (`struct netif`), NOT an `esp_netif_t`. ESP-IDF's
-espressif/mdns component requires `esp_netif_t*` for `mdns_register_netif()`.
-The LWIP netif is static/private inside mmipal — no public getter.
+mmipal creates a raw LWIP `struct netif`, NOT an `esp_netif_t`. ESP-IDF's espressif/mdns
+component requires `esp_netif_t*` for `mdns_register_netif()`. The LWIP netif is
+static/private inside mmipal with no public getter.
 
-**Current workaround**: mDNS is not functional. Device is reachable by IP address only.
-The mDNS component initializes but reports `ESP_ERR_INVALID_STATE` because it cannot
-find a registered network interface.
+### Solution: fake `esp_netif_obj` wrapper
 
-**Future fix options**:
-1. Add `mmipal_get_netif()` upstream and create a minimal `esp_netif_t` wrapper
-2. Use LWIP's built-in mDNS responder (`lwip/apps/mdns.h`) directly
-3. Wait for Morse Micro to add esp_netif integration to their SDK
+After the HaLow link comes up and an IP is acquired, we:
+
+1. **Find mmipal's LWIP netif** by iterating `netif_list` (LWIP global) and matching
+   against the HaLow MAC address from `mmwlan_get_mac_addr()`.
+
+2. **Allocate a minimal `esp_netif_obj`** struct (defined in the ESP-IDF internal header
+   `esp_netif_lwip_internal.h`) and set `lwip_netif` to point to the found netif.
+   The `esp_netif_get_ip_info()` function — which mDNS calls internally — reads
+   IP/netmask/gateway directly from this LWIP netif pointer, so no other fields
+   need to be populated.
+
+3. **Reinitialize mDNS**: call `mdns_free()` (cleans up ESPHome's earlier failed init
+   attempt) then `mdns_init()`. Set hostname via `mdns_hostname_set()`.
+
+4. **Register and enable**: call `mdns_register_netif()` with our fake `esp_netif_t*`,
+   then `mdns_netif_action(MDNS_EVENT_ENABLE_IP4)` and `MDNS_EVENT_ANNOUNCE_IP4`.
+
+### Required sdkconfig for mDNS
+
+Without these, `mdns_init()` tries to register WiFi/ETH event handlers that fail
+because no standard WiFi or Ethernet driver is active:
+
+```
+CONFIG_MDNS_PREDEF_NETIF_STA=n
+CONFIG_MDNS_PREDEF_NETIF_AP=n
+CONFIG_MDNS_PREDEF_NETIF_ETH=n
+```
+
+### Required build flag
+
+The `esp_netif_lwip_internal.h` header is not on the default include path:
+
+```
+-I~/.platformio/packages/framework-espidf/components/esp_netif/lwip
+```
+
+### Stability note
+
+The `esp_netif_obj` struct layout is defined in an ESP-IDF internal header. It has been
+stable since ESP-IDF v4.x through v5.5.2. If it changes in a future IDF version, the
+fake wrapper would need updating. The struct is only used as a pointer container — mDNS
+reads `lwip_netif` and calls `esp_netif_get_ip_info()` which reads IP from the LWIP netif
+directly.
 
 ## ESPHome Integration Architecture
 
@@ -366,6 +403,7 @@ are published once on first connection.
 | 2026-04-30 | LWIP + iperf UDP server | Server listening on port 5001, IPv4 + IPv6 |
 | 2026-04-30 | ESPHome compile (Seeed SDK, IDF 5.5.2) | 1.08MB firmware, 59% flash |
 | 2026-04-30 | ESPHome full boot with sensors | All sensors reporting, API+OTA running |
+| 2026-04-30 | mDNS registration | `halow-test.local` registered on HaLow interface |
 | 2026-04-30 | Upstream SDK (v2.10.4, IDF 5.5.2) | FW loads but connection fails (BCF issue) |
 
 ### Working Configuration (Seeed SDK + IDF 5.5.2)
@@ -375,13 +413,16 @@ morselib version 2.6.4-esp32
 Morse chip ID 0x306
 Actual SPI CLK 40000kHz
 HaLow MAC: A8:DD:9F:4D:C6:01
-Setup time: 718ms (to mmwlan_sta_enable)
+Setup time: ~720ms (to mmwlan_sta_enable)
 Connection time: ~10s from cold boot
-RSSI: -37 dBm
+RSSI: -35 to -37 dBm
 DHCP IP: 192.168.12.164
 Gateway: 192.168.12.1
 BSSID: 50:2E:91:D2:C9:E4
 BCF: bcf_mf16858_us.mbin
+mDNS: halow-test.local registered
+ESPHome API: port 6053
+ESPHome OTA: port 3232
 ```
 
 ## Development Environment

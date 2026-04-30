@@ -164,7 +164,8 @@ All testing performed with XIAO ESP32-S3 + XIAO HaLow Hat + GL-iNet HaLowLink 2:
 | DHCP IP acquisition | Pass -- 192.168.12.164 from gateway 192.168.12.1 |
 | LWIP TCP/UDP stack | Pass -- iperf server operational |
 | ESPHome compile (IDF 5.5.2) | Pass -- 1.08MB firmware, 59% flash usage |
-| **ESPHome full boot with sensors** | **Pass** -- RSSI (-37 dBm), IP, MAC, BSSID, FW version all reporting |
+| **ESPHome full boot with sensors** | **Pass** -- RSSI (-35 dBm), IP, MAC, BSSID, FW version all reporting |
+| **mDNS discovery** | **Pass** -- `halow-test.local` registered on HaLow interface |
 
 ## Component Configuration
 
