@@ -92,15 +92,38 @@ via the Seeed XIAO HaLow Hat (WIO-WM6180) on an XIAO ESP32-S3.
 6. ⬜ Characterize range and throughput
 
 ### Phase 3: ESPHome Integration
-7. ⬜ Create ESPHome external component structure
-8. ⬜ Implement SPI driver for MM6108
-9. ⬜ Expose HaLow as network interface
-10. ⬜ Add configuration options (SSID, password, channel, etc.)
-11. ⬜ Test with Home Assistant
+7. ✅ Create ESPHome external component structure (components/mm_halow/)
+8. ⬜ Integrate MM-IoT-SDK build into ESPHome (link morselib, mm_shims, mbin blobs)
+9. ⬜ Test compile and flash via ESPHome
+10. ⬜ Verify HaLow connectivity under ESPHome
+11. ⬜ Test with Home Assistant (API + OTA over HaLow)
+
+## ESPHome Component Architecture
+
+```
+components/mm_halow/
+├── __init__.py              # YAML schema, code generation
+├── mm_halow_component.h     # Component class declaration
+└── mm_halow_component.cpp   # MM-IoT-SDK bridge implementation
+```
+
+- Replaces `wifi:` in YAML config with `mm_halow:`
+- Uses `CONFLICTS_WITH = ["wifi"]`, `AUTO_LOAD = ["network"]`
+- Component priority: `setup_priority::WIFI`
+- SPI/firmware managed by MM-IoT-SDK (not ESPHome's SPI component)
+- DHCP via mmipal (MM-IoT-SDK's LWIP wrapper)
+- setup(): mmhal_init -> mmwlan_init -> mmwlan_boot -> mmwlan_sta_enable
+- loop(): polls link state and IP from mmipal
+
+### Build Integration (TODO)
+- ESPHome must use `framework: esp-idf` with version 5.1.1
+- Need to link: morselib (libmorse_nocrypto.a), mm_shims, mmipal, mmutils
+- Need to embed: mm6108.mbin, bcf_mf16858_us.mbin
+- Kconfig overrides for pin mapping and FreeRTOS config
 
 ## Key Challenges
-- MM-IoT-SDK is ESP-IDF based; ESPHome uses Arduino or ESP-IDF framework
-- BCF binary blobs need to be included and loaded at runtime
-- SPI communication is complex (not simple AT commands)
+- Linking MM-IoT-SDK's prebuilt libraries into ESPHome's build system
+- Embedding firmware binary blobs (mm6108.mbin, bcf_mf16858_us.mbin) 
+- Coexistence of MM-IoT-SDK's LWIP instance with ESPHome's network stack
 - BUSY pin may not be wired on HaLow Hat - need to handle power save carefully
 - Stack size requirements for Morse Micro SDK (similar to BMV080 experience)

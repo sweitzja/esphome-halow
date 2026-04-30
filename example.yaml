@@ -1,0 +1,47 @@
+esphome:
+  name: halow-test
+  friendly_name: HaLow Test Device
+  platformio_options:
+    # MM-IoT-SDK framework paths
+    build_flags:
+      - "-I$HOME/esp/mm-iot-esp32/framework/morselib/include"
+      - "-I$HOME/esp/mm-iot-esp32/framework/mm_shims"
+      - "-I$HOME/esp/mm-iot-esp32/framework/src/mmipal/include"
+      - "-I$HOME/esp/mm-iot-esp32/framework/src/mmutils/include"
+
+esp32:
+  board: seeed_xiao_esp32s3
+  framework:
+    type: esp-idf
+    version: "5.1.1"
+
+# Use the local external component
+external_components:
+  - source:
+      type: local
+      path: components
+
+# HaLow network (replaces wifi:)
+mm_halow:
+  ssid: "halowlink2-627b"
+  password: "your-password-here"
+  country_code: "US"
+  # Pin defaults match XIAO HaLow Hat, override if needed:
+  # clk_pin: 7
+  # mosi_pin: 9
+  # miso_pin: 8
+  # cs_pin: 4
+  # irq_pin: 3
+  # reset_pin: 1
+  # wake_pin: 2
+  # busy_pin: 5
+
+# ESPHome API for Home Assistant
+api:
+
+# Enable logging
+logger:
+
+# OTA updates (over HaLow!)
+ota:
+  platform: esphome
