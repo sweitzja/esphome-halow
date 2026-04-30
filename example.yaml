@@ -19,8 +19,8 @@ mm_halow:
   password: "your-password-here"
   country_code: "US"
   security: SAE                          # SAE (WPA3), OWE, or OPEN
-  bcf_file: "bcf_mf16858.mbin"            # Board config for FGH100M-H
-  mm_iot_sdk_path: "~/esp/mm-iot-esp32-upstream"
+  bcf_file: "bcf_mf16858_us.mbin"          # Board config for FGH100M-H (US)
+  mm_iot_sdk_path: "~/esp/mm-iot-esp32"
   # manual_ip:                           # Uncomment for static IP
   #   static_ip: 192.168.12.100
   #   gateway: 192.168.12.1

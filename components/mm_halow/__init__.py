@@ -232,14 +232,19 @@ async def to_code(config):
         )
 
     # Register IDF components
-    for name, subpath in [
+    components = [
         ("morselib", "morselib"),
         ("mm_shims", "mm_shims"),
         ("mmipal", "src/mmipal"),
         ("mmutils", "src/mmutils"),
         ("mmpktmem", "src/mmpktmem"),
-        ("mmregdb", "src/mmregdb"),
-    ]:
+    ]
+    # mmregdb exists in upstream SDK but not in Seeed fork
+    mmregdb_path = os.path.join(framework_path, "src", "mmregdb")
+    if os.path.isdir(mmregdb_path):
+        components.append(("mmregdb", "src/mmregdb"))
+        cg.add_define("USE_MM_HALOW_REGDB")
+    for name, subpath in components:
         add_idf_component(name=name, path=os.path.join(framework_path, subpath))
 
     # Kconfig: Pins
@@ -252,9 +257,25 @@ async def to_code(config):
     add_idf_sdkconfig_option("CONFIG_MM_SPI_CS", config[CONF_CS_PIN])
     add_idf_sdkconfig_option("CONFIG_MM_SPI_IRQ", config[CONF_IRQ_PIN])
 
-    # Kconfig: Firmware files
-    add_idf_sdkconfig_option("CONFIG_MM_BCF_FILE", config[CONF_BCF_FILE])
-    add_idf_sdkconfig_option("CONFIG_MM_FW_FILE", "mm6108.mbin")
+    # Kconfig: Firmware files — differs between upstream and Seeed SDK
+    kconfig_path = os.path.join(framework_path, "mm_shims", "Kconfig")
+    with open(kconfig_path) as f:
+        kconfig_content = f.read()
+    if "MM_BCF_FILE" in kconfig_content:
+        # Upstream SDK: string-based BCF/FW config
+        add_idf_sdkconfig_option("CONFIG_MM_BCF_FILE", config[CONF_BCF_FILE])
+        add_idf_sdkconfig_option("CONFIG_MM_FW_FILE", "mm6108.mbin")
+    else:
+        # Seeed SDK: choice-based BCF config
+        bcf = config[CONF_BCF_FILE]
+        if "mf16858_us" in bcf:
+            add_idf_sdkconfig_option("CONFIG_MM_BCF_MF16858_US", True)
+        elif "mf08651_us" in bcf:
+            add_idf_sdkconfig_option("CONFIG_MM_BCF_MF08651_US", True)
+        elif "mf08551" in bcf:
+            add_idf_sdkconfig_option("CONFIG_MM_BCF_MF08551", True)
+        elif "mf08251" in bcf:
+            add_idf_sdkconfig_option("CONFIG_MM_BCF_MF08251", True)
     add_idf_sdkconfig_option("CONFIG_MMHAL_CHIP_TYPE_MM6108", True)
 
     # Kconfig: FreeRTOS

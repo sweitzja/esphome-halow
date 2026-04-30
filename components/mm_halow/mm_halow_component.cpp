@@ -18,7 +18,11 @@ extern "C" {
 #include "mmosal.h"
 #include "mmwlan.h"
 #include "mmipal.h"
+#ifdef USE_MM_HALOW_REGDB
 #include "mmregdb.h"
+#else
+#include "mmwlan_regdb.def"
+#endif
 }
 
 namespace esphome {
@@ -193,12 +197,15 @@ void MMHalowComponent::loop() {
 
   switch (this->state_) {
     case HalowState::CONNECTING: {
+      // Check link via both callback flag AND direct poll
+      bool link_is_up = s_link_up || (mmipal_get_link_state() == MMIPAL_LINK_UP);
       // Periodic debug log during connection
       if ((millis() - this->connect_start_time_) % 10000 < 50) {
-        ESP_LOGD(TAG, "Waiting for link... s_link_up=%d elapsed=%lums",
-                 (int) s_link_up, millis() - this->connect_start_time_);
+        ESP_LOGD(TAG, "Waiting for link... s_link_up=%d mmipal=%d elapsed=%lums",
+                 (int) s_link_up, (int)(mmipal_get_link_state() == MMIPAL_LINK_UP),
+                 millis() - this->connect_start_time_);
       }
-      if (s_link_up && this->check_ip_()) {
+      if (link_is_up && this->check_ip_()) {
         // Connected and got IP
         this->state_ = HalowState::CONNECTED;
         this->reconnect_count_ = 0;
@@ -226,7 +233,7 @@ void MMHalowComponent::loop() {
     }
 
     case HalowState::CONNECTED: {
-      if (!s_link_up) {
+      if (!s_link_up && mmipal_get_link_state() != MMIPAL_LINK_UP) {
         // Link dropped — start reconnect
         this->state_ = HalowState::CONNECTING;
         this->ip_addresses_ = {};
