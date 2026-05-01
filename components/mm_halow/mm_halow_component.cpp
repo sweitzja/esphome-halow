@@ -119,6 +119,11 @@ void MMHalowComponent::setup() {
     return;
   }
 
+  // Disable power save — keeps radio awake so device responds to ARP/ping reliably.
+  // Without this, the radio sleeps between beacons and misses inbound packets.
+  mmwlan_set_power_save_mode(MMWLAN_PS_DISABLED);
+  ESP_LOGI(TAG, "Power save disabled");
+
   // Read and log version info
   struct mmwlan_version version;
   if (mmwlan_get_version(&version) == MMWLAN_SUCCESS) {
