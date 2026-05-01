@@ -253,8 +253,9 @@ void MMHalowComponent::loop() {
     }
 
     case HalowState::STOPPED: {
-      // Wait 3 seconds after a failed attempt before retrying
-      if (this->setup_complete_ && millis() - this->connect_start_time_ > 3000) {
+      // Wait 5 seconds after disconnect before retrying — gives radio time to settle
+      if (this->setup_complete_ && millis() - this->connect_start_time_ > 5000) {
+        ESP_LOGI(TAG, "Attempting reconnect...");
         this->state_ = HalowState::CONNECTING;
         this->start_connect_();
       }
@@ -262,16 +263,23 @@ void MMHalowComponent::loop() {
     }
 
     case HalowState::CONNECTED: {
-      // Only consider disconnected if we've lost the IP AND the STA is not connected
-      bool ip_valid = this->check_ip_();
-      if (!ip_valid && !s_sta_connected) {
+      // Multiple disconnect detection strategies:
+      // 1. STA callback reported disconnection
+      // 2. STA state query returns not-connected
+      // 3. RSSI is unmeasurable (INT32_MIN = no signal)
+      bool sta_ok = s_sta_connected ||
+                    (mmwlan_get_sta_state() == MMWLAN_STA_CONNECTED);
+      bool rssi_ok = (mmwlan_get_rssi() != INT32_MIN);
+
+      if (!sta_ok || !rssi_ok) {
         // Link dropped — start reconnect
-        this->state_ = HalowState::CONNECTING;
+        this->state_ = HalowState::STOPPED;
         this->ip_addresses_ = {};
         this->reconnect_count_++;
-        ESP_LOGW(TAG, "Link lost, reconnecting (attempt %lu)...", this->reconnect_count_);
+        ESP_LOGW(TAG, "Link lost (sta=%d rssi=%d), reconnecting (attempt %lu)...",
+                 (int) sta_ok, (int) rssi_ok, this->reconnect_count_);
         mmwlan_sta_disable();
-        this->start_connect_();
+        this->connect_start_time_ = millis();  // Wait before retrying
       } else {
         // Update sensors periodically
         uint32_t now = millis();
