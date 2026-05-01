@@ -557,7 +557,8 @@ the netif via MAC match in `netif_list`.
 | 2026-05-01 | ESPHome API port from LAN | TCP connect to 192.168.1.86:6053 succeeded |
 | 2026-05-01 | Home Assistant connected | HA 2026.4.2 connected, all entities visible |
 | 2026-05-01 | Auto-download SDK | Clean build from scratch succeeds in ~140s |
-| 2026-05-01 | Out-of-range reconnection | RSSI-based disconnect detection + auto-retry |
+| 2026-05-01 | Out-of-range reconnection | **Working** — recovered after walking out/back in range |
+| 2026-05-01 | Range test RSSI profile | -29 (close) → -84 (edge) → disconnect → reconnect at -37 |
 
 ### Working Configuration (Seeed SDK + IDF 5.5.2)
 ```
