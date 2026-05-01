@@ -27,7 +27,9 @@ extern "C" {
 
 // ESP-IDF headers for mDNS integration
 extern "C" {
+#include "driver/gpio.h"
 #include "lwip/netif.h"
+#include "lwip/tcpip.h"
 #include "mdns.h"
 // Internal header for esp_netif_obj struct layout — needed to create
 // a minimal wrapper around mmipal's raw LWIP netif for mDNS registration.
@@ -99,6 +101,17 @@ void MMHalowComponent::set_manual_ip(const std::string &ip, const std::string &g
 void MMHalowComponent::setup() {
   ESP_LOGI(TAG, "Setting up Wi-Fi HaLow (MM6108)...");
   global_mm_halow_component = this;
+
+  // Hardware-reset the MM6108 before init. If the chip is in a bad state
+  // from a previous session (e.g., out-of-range disconnect), mmhal_init()
+  // will hang on SPI and trigger the watchdog. Toggling RESET_N ensures
+  // the chip starts clean regardless of previous state.
+  gpio_set_direction((gpio_num_t) this->reset_pin_, GPIO_MODE_OUTPUT);
+  gpio_set_level((gpio_num_t) this->reset_pin_, 0);  // Assert reset
+  vTaskDelay(pdMS_TO_TICKS(100));
+  gpio_set_level((gpio_num_t) this->reset_pin_, 1);  // Release reset
+  vTaskDelay(pdMS_TO_TICKS(100));
+  ESP_LOGI(TAG, "MM6108 hardware reset complete");
 
   // Initialize MM-IoT-SDK subsystems
   mmhal_init();
@@ -237,9 +250,10 @@ void MMHalowComponent::loop() {
 
   switch (this->state_) {
     case HalowState::CONNECTING: {
-      // Accept connection if we have a valid IP — don't require link_state callback
-      // which may not fire reliably on all AP configurations
-      if (this->check_ip_()) {
+      // Require STA connected AND valid IP before transitioning.
+      // Don't use check_ip_() alone — DHCP lease can be cached from previous session.
+      bool sta_ready = s_sta_connected || s_link_up;
+      if (sta_ready && this->check_ip_()) {
         // Connected and got IP
         this->state_ = HalowState::CONNECTED;
         if (this->reconnect_count_ > 0) {
@@ -252,17 +266,21 @@ void MMHalowComponent::loop() {
         this->last_sensor_update_ = 0;  // Force immediate sensor update
 
         // Ensure the LWIP netif link is marked UP so ARP responses work.
-        // The mmipal link_up callback may not fire on all IDF/SDK combinations.
-        uint8_t mac[6];
-        mmwlan_get_mac_addr(mac);
-        for (struct netif *nif = netif_list; nif != nullptr; nif = nif->next) {
-          if (memcmp(nif->hwaddr, mac, 6) == 0) {
-            if (!netif_is_link_up(nif)) {
-              netif_set_link_up(nif);
-              ESP_LOGI(TAG, "Forced LWIP netif link UP");
+        // Must hold the LWIP core lock — netif_set_link_up asserts this on IDF 5.5.
+        {
+          uint8_t mac[6];
+          mmwlan_get_mac_addr(mac);
+          LOCK_TCPIP_CORE();
+          for (struct netif *nif = netif_list; nif != nullptr; nif = nif->next) {
+            if (memcmp(nif->hwaddr, mac, 6) == 0) {
+              if (!netif_is_link_up(nif)) {
+                netif_set_link_up(nif);
+                ESP_LOGI(TAG, "Forced LWIP netif link UP");
+              }
+              break;
             }
-            break;
           }
+          UNLOCK_TCPIP_CORE();
         }
 
         if (!this->mdns_started_) {
