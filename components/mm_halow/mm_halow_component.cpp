@@ -269,11 +269,17 @@ void MMHalowComponent::loop() {
           this->start_mdns_();
         }
       } else if (millis() - this->connect_start_time_ > CONNECT_TIMEOUT_MS) {
-        // Timeout — disable STA and schedule retry
+        // Timeout — retry connection
         this->reconnect_count_++;
         ESP_LOGW(TAG, "Connect timeout, retrying (attempt %lu)...", this->reconnect_count_);
-        mmwlan_sta_disable();
-        // Non-blocking: set connect_start_time so we wait a bit before retrying
+
+        // Only disable STA every 3rd attempt to avoid crashing the SDK.
+        // Simple re-enable often works for re-association after range loss.
+        if (this->reconnect_count_ % 3 == 0) {
+          ESP_LOGI(TAG, "Full STA disable/enable cycle");
+          mmwlan_sta_disable();
+        }
+
         this->connect_start_time_ = millis();
         this->state_ = HalowState::STOPPED;
       }
@@ -310,7 +316,9 @@ void MMHalowComponent::loop() {
         s_link_down_event = false;
         ESP_LOGW(TAG, "=== LINK LOST === (link_down=%d, sta=%d, rssi=%ld, attempt %lu)",
                  (int) link_down, (int) sta_ok, (long) last_rssi, this->reconnect_count_);
-        mmwlan_sta_disable();
+        // Don't call sta_disable here — just let start_connect_() re-enable.
+        // Calling sta_disable after a hard disconnect can put the SDK in a bad state
+        // that causes watchdog crashes on subsequent boot.
         this->connect_start_time_ = millis();  // Wait before retrying
       } else {
         // Update sensors periodically
