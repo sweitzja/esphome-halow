@@ -307,6 +307,13 @@ async def to_code(config):
     if os.path.isdir(esp_netif_internal):
         cg.add_build_flag(f"-I{esp_netif_internal}")
 
+    # Wrap network utility functions so ESPHome's API/OTA components
+    # recognize mm_halow as a valid network provider. Without this,
+    # network::is_connected() returns false and API clients get disconnected.
+    cg.add_build_flag("-Wl,--wrap=_ZN7esphome7network12is_connectedEv")
+    cg.add_build_flag("-Wl,--wrap=_ZN7esphome7network16get_ip_addressesEv")
+    cg.add_build_flag("-Wl,--wrap=_ZN7esphome7network15get_use_addressEv")
+
     # PlatformIO extra script for firmware blob generation
     cg.add_platformio_option(
         "extra_scripts",
