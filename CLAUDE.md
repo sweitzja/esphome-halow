@@ -90,6 +90,18 @@ mDNS works via a fake `esp_netif_obj` wrapper around mmipal's raw LWIP netif:
 - Requires: `CONFIG_MDNS_PREDEF_NETIF_STA/AP/ETH=n`
 - Requires: `-I<framework-espidf>/components/esp_netif/lwip` for internal header
 
+## Network Provider (--wrap)
+ESPHome's `network::is_connected()` doesn't know about mm_halow. We use
+`--wrap` on 3 mangled C++ symbols to intercept and check our component first.
+Without this, the API server disconnects all clients with "Network down".
+File: `network_wrap.cpp`
+
+## Reconnection
+- Disconnect detected via: STA callback, `mmwlan_get_sta_state()`, RSSI (INT32_MIN = no signal)
+- RSSI check catches gradual range loss before STA formally disconnects
+- Transitions to STOPPED (5s wait) then retries `start_connect_()`
+- Logs `=== LINK LOST ===` with reason and `=== LINK RECOVERED ===` with downtime
+
 ## Working Test Results
 ```
 FW: 1.13.1, morselib: 2.6.4-esp32, chip: 0x306
@@ -97,8 +109,10 @@ MAC: A8:DD:9F:4D:C6:01, RSSI: -34 dBm
 IP: 192.168.1.86, GW: 192.168.1.1 (bridged via HaLowLink 2)
 Ping: 10/10, 0% loss, 7-11ms (power save disabled)
 BSSID: 50:2E:91:D2:C9:E4, BCF: bcf_mf16858_us.mbin
-mDNS: halow-test.local registered
+mDNS: halow-test.local + _esphomelib._tcp registered
+HA: Home Assistant 2026.4.2 connected, all entities visible
 ESPHome API port 6053: reachable from LAN
 Heap: 304,520 bytes (stable, zero leak over 20 min)
-All sensors publishing
+SDK: auto-downloaded from sweitzja/mm-iot-esp32
+Build: zero manual setup, ~140s clean compile
 ```

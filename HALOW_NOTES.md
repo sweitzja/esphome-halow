@@ -341,32 +341,56 @@ directly.
 ### Component Design
 ```
 components/mm_halow/
-├── __init__.py              # CONFIG_SCHEMA, to_code(), build flags
+├── __init__.py              # CONFIG_SCHEMA, to_code(), build flags, auto-download SDK
 ├── mm_halow_component.h     # Class declaration with sensor pointers
-├── mm_halow_component.cpp   # MM-IoT-SDK bridge with state machine
-└── pre_build.py             # PlatformIO script: firmware blob linking
+├── mm_halow_component.cpp   # MM-IoT-SDK bridge with state machine + mDNS
+├── network_wrap.cpp         # Linker --wrap overrides for network::is_connected()
+└── pre_build.py             # PlatformIO script: firmware blob linking (3 strategies)
 ```
 
 ### State Machine
 ```
-setup() ok ──► CONNECTING ─── link up + IP ──► CONNECTED
-                   ▲  timeout 60s: disable+retry    │
-                   │                                 │
-               STOPPED ◄──── link drops ─────────────┘
-                   │  wait 3s
+setup() ok ──► CONNECTING ─── valid IP ──► CONNECTED
+                   ▲  timeout 60s              │
+                   │                           │ STA disconnected
+               STOPPED ◄──────────────────────┘  OR RSSI = INT32_MIN
+                   │  wait 5s
                    └──► CONNECTING (auto-reconnect)
 ```
+
+Disconnect detection (checked every loop iteration in CONNECTED state):
+- `s_sta_connected` flag from STA callback
+- `mmwlan_get_sta_state()` polled directly
+- `mmwlan_get_rssi()` — INT32_MIN means no signal (catches gradual range loss)
+
+Logs `=== LINK LOST ===` with reason and `=== LINK RECOVERED ===` with total downtime.
+
+### Network Provider Integration
+ESPHome's `network::is_connected()` only checks USE_WIFI/USE_ETHERNET/etc.
+We use linker `--wrap` to intercept three mangled C++ symbols:
+- `_ZN7esphome7network12is_connectedEv` (is_connected)
+- `_ZN7esphome7network16get_ip_addressesEv` (get_ip_addresses)
+- `_ZN7esphome7network15get_use_addressEv` (get_use_address)
+
+Each wrapper checks `global_mm_halow_component` first, then falls through to the
+original implementation. Without this, the API server disconnects all clients with
+"Network down" because it thinks there's no network.
+
+### SDK Auto-Download
+The MM-IoT-SDK is auto-downloaded from https://github.com/sweitzja/mm-iot-esp32
+(pre-patched fork) to `~/.esphome/mm-iot-esp32/` on first compile. Users can
+override with `mm_iot_sdk_path` in YAML. No manual clone or patches needed.
 
 ### Build System
 - `add_idf_component(path=...)` for morselib, mm_shims, mmipal, mmutils, mmpktmem
   (and mmregdb if present — upstream SDK only)
-- `add_idf_sdkconfig_option()` for Kconfig (pins, FreeRTOS, BCF, chip type)
-- `pre_build.py` handles firmware blob linking:
-  - **Upstream SDK**: runs ninja to invoke CMake custom targets (objcopy .mbin -> .o)
-  - **Seeed SDK**: copies pre-built .mbin.o files from mm_shims/ directory
-  - Auto-detects BCF name from Kconfig choice (Seeed) or string (upstream)
-  - Always adds .o paths to `LINKFLAGS` for PlatformIO's SCons linker
-- Uses Seeed MM-IoT-SDK v2.6.4 (with patches for IDF 5.5.2 compatibility)
+- `add_idf_sdkconfig_option()` for Kconfig (pins, FreeRTOS, BCF, chip type, LWIP)
+- `pre_build.py` handles firmware blob linking with 3 fallback strategies:
+  1. **ninja**: runs CMake custom targets (objcopy .mbin -> .o)
+  2. **copy**: copies pre-built .o files from SDK mm_shims/ directory
+  3. **objcopy**: generates .o directly from .mbin source files
+- Auto-detects BCF name from Kconfig choice (Seeed) or string (upstream)
+- Uses pre-patched Seeed MM-IoT-SDK v2.6.4 fork (IDF 5.5.2 compatible)
 
 ### Sensors
 All sensors are optional YAML config entries within the `mm_halow:` block:
@@ -531,6 +555,9 @@ the netif via MAC match in `netif_list`.
 | 2026-05-01 | Ping from LAN (power save ON) | Intermittent: 5/20 success, ARP timeouts |
 | 2026-05-01 | Ping from LAN (power save OFF) | **10/10, 0% loss, 7-11ms latency** |
 | 2026-05-01 | ESPHome API port from LAN | TCP connect to 192.168.1.86:6053 succeeded |
+| 2026-05-01 | Home Assistant connected | HA 2026.4.2 connected, all entities visible |
+| 2026-05-01 | Auto-download SDK | Clean build from scratch succeeds in ~140s |
+| 2026-05-01 | Out-of-range reconnection | RSSI-based disconnect detection + auto-retry |
 
 ### Working Configuration (Seeed SDK + IDF 5.5.2)
 ```
@@ -552,6 +579,10 @@ ESPHome API: port 6053 (reachable from LAN)
 ESPHome OTA: port 3232
 Power save: disabled (required for reliable inbound connectivity)
 Heap: 304,520 bytes free (stable, no leaks)
+HA: Home Assistant 2026.4.2 connected via API
+SDK: auto-downloaded from sweitzja/mm-iot-esp32 fork
+Network: --wrap on is_connected() for API/OTA provider registration
+Reconnect: RSSI + STA state monitoring, auto-retry with 5s backoff
 ```
 
 ## Development Environment
