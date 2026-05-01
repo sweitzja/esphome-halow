@@ -48,6 +48,7 @@ MMHalowComponent *global_mm_halow_component = nullptr;  // NOLINT
 // --- SDK Callbacks (called from MM-IoT-SDK FreeRTOS tasks) ---
 
 static volatile bool s_link_up = false;
+static volatile bool s_link_down_event = false;  // Set on link-down, cleared on reconnect
 static volatile bool s_sta_connected = false;
 
 static void link_state_cb(enum mmwlan_link_state state, void *arg) {
@@ -55,7 +56,20 @@ static void link_state_cb(enum mmwlan_link_state state, void *arg) {
   if (state == MMWLAN_LINK_UP) {
     ESP_LOGI(TAG, "HaLow link UP");
   } else {
+    s_link_down_event = true;
     ESP_LOGW(TAG, "HaLow link DOWN");
+  }
+}
+
+// mmipal link status callback — more reliable than mmwlan link state callback
+static void mmipal_link_status_cb(const struct mmipal_link_status *status) {
+  if (status->link_state == MMIPAL_LINK_UP) {
+    s_link_up = true;
+    ESP_LOGI(TAG, "mmipal link UP (IP: %s)", status->ip_addr);
+  } else {
+    s_link_up = false;
+    s_link_down_event = true;
+    ESP_LOGW(TAG, "mmipal link DOWN");
   }
 }
 
@@ -156,6 +170,10 @@ void MMHalowComponent::setup() {
     return;
   }
 
+  // Register mmipal link status callback — more reliable than mmwlan_register_link_state_cb
+  // for detecting disconnections. This fires from the LWIP/mmipal layer.
+  mmipal_set_link_status_callback(mmipal_link_status_cb);
+
   this->setup_complete_ = true;
   this->state_ = HalowState::CONNECTING;
   this->start_connect_();
@@ -179,6 +197,11 @@ void MMHalowComponent::start_connect_() {
   } else {
     sta_args.security_type = MMWLAN_SAE;
   }
+
+  // Reset connection state flags
+  s_link_up = false;
+  s_link_down_event = false;
+  s_sta_connected = false;
 
   ESP_LOGI(TAG, "Connecting to '%s' (%s)...", this->ssid_.c_str(), this->security_type_.c_str());
 
@@ -268,23 +291,25 @@ void MMHalowComponent::loop() {
     }
 
     case HalowState::CONNECTED: {
-      // Multiple disconnect detection strategies:
-      // 1. STA callback reported disconnection
-      // 2. STA state query returns not-connected
-      // 3. RSSI is unmeasurable (INT32_MIN = no signal)
+      // Disconnect detection — multiple strategies:
+      // 1. mmipal link-down event (most reliable — fires from LWIP layer)
+      // 2. STA callback + state query
+      // 3. RSSI unmeasurable (INT32_MIN = no signal / radio stuck)
+      bool link_down = s_link_down_event;
       bool sta_ok = s_sta_connected ||
                     (mmwlan_get_sta_state() == MMWLAN_STA_CONNECTED);
       bool rssi_ok = (mmwlan_get_rssi() != INT32_MIN);
 
-      if (!sta_ok || !rssi_ok) {
-        // Link dropped — start reconnect
+      if (link_down || !sta_ok || !rssi_ok) {
+        // Link dropped — disable STA and schedule reconnect
         int32_t last_rssi = mmwlan_get_rssi();
         this->state_ = HalowState::STOPPED;
         this->ip_addresses_ = {};
         this->reconnect_count_++;
         this->disconnect_time_ = millis();
-        ESP_LOGW(TAG, "=== LINK LOST === (sta_connected=%d, rssi=%ld, attempt %lu)",
-                 (int) sta_ok, (long) last_rssi, this->reconnect_count_);
+        s_link_down_event = false;
+        ESP_LOGW(TAG, "=== LINK LOST === (link_down=%d, sta=%d, rssi=%ld, attempt %lu)",
+                 (int) link_down, (int) sta_ok, (long) last_rssi, this->reconnect_count_);
         mmwlan_sta_disable();
         this->connect_start_time_ = millis();  // Wait before retrying
       } else {
