@@ -1,7 +1,10 @@
 """ESPHome component for Wi-Fi HaLow (IEEE 802.11ah) via Morse Micro MM6108."""
 
+import logging
 import os
 import esphome.codegen as cg
+
+_LOGGER = logging.getLogger(__name__)
 import esphome.config_validation as cv
 from esphome.const import (
     CONF_ID,
@@ -91,9 +94,11 @@ CONFIG_SCHEMA = cv.All(
             cv.Optional(CONF_SECURITY, default="SAE"): cv.enum(
                 SECURITY_TYPES, upper=True
             ),
-            cv.Optional(CONF_BCF_FILE, default="bcf_mf16858.mbin"): cv.string_strict,
             cv.Optional(
-                CONF_MM_IOT_SDK_PATH, default="~/esp/mm-iot-esp32"
+                CONF_BCF_FILE, default="bcf_mf16858_us.mbin"
+            ): cv.string_strict,
+            cv.Optional(
+                CONF_MM_IOT_SDK_PATH, default="~/.esphome/mm-iot-esp32"
             ): cv.string,
             cv.Optional(CONF_MANUAL_IP): MANUAL_IP_SCHEMA,
             # SPI pins — defaults match XIAO HaLow Hat
@@ -220,16 +225,28 @@ async def to_code(config):
 
     # --- MM-IoT-SDK Integration ---
 
-    # Resolve SDK path
+    # Resolve and auto-download SDK if needed
+    MM_IOT_SDK_REPO = "https://github.com/sweitzja/mm-iot-esp32.git"
+
     sdk_path = os.path.expanduser(config[CONF_MM_IOT_SDK_PATH])
     sdk_path = os.path.abspath(sdk_path)
     framework_path = os.path.join(sdk_path, "framework")
 
     if not os.path.isdir(framework_path):
-        raise cv.Invalid(
-            f"MM-IoT-SDK not found at {sdk_path}. "
-            f"Clone: git clone https://github.com/MorseMicro/mm-iot-esp32.git {sdk_path}"
+        import subprocess
+
+        _LOGGER.info("Downloading MM-IoT-SDK to %s ...", sdk_path)
+        result = subprocess.run(
+            ["git", "clone", "--depth", "1", MM_IOT_SDK_REPO, sdk_path],
+            capture_output=True,
+            text=True,
         )
+        if result.returncode != 0:
+            raise cv.Invalid(
+                f"Failed to download MM-IoT-SDK: {result.stderr.strip()}\n"
+                f"Manually clone: git clone {MM_IOT_SDK_REPO} {sdk_path}"
+            )
+        _LOGGER.info("MM-IoT-SDK downloaded successfully")
 
     # Register IDF components
     components = [

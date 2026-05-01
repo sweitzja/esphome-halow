@@ -35,20 +35,9 @@ LoRa still wins on raw range (10-15km vs ~1km) and power efficiency for simple o
 
 ### Prerequisites
 - ESPHome 2024.2+ with ESP-IDF framework support
-- [Seeed MM-IoT-SDK](https://github.com/Seeed-Studio/mm-iot-esp32) (cloned locally, with patches)
+- Git (for automatic SDK download on first compile)
 
-Clone and patch the SDK:
-```bash
-git clone https://github.com/Seeed-Studio/mm-iot-esp32.git ~/esp/mm-iot-esp32
-
-# Patch 1: Relax IDF version constraints (required for ESPHome's IDF 5.5.2)
-find ~/esp/mm-iot-esp32/framework -name "idf_component.yml" \
-  -exec sed -i 's/version: "==5.1.1"/version: ">=5.1.1"/' {} \;
-
-# Patch 2: Fix ESP_SYSTEM_INIT_FN macro for IDF 5.3+
-sed -i 's/ESP_SYSTEM_INIT_FN(mmosal_dump_failure_info, BIT(0), 999)/ESP_SYSTEM_INIT_FN(mmosal_dump_failure_info, SECONDARY, BIT(0), 999)/' \
-  ~/esp/mm-iot-esp32/framework/mm_shims/mmosal_shim_freertos_esp32.c
-```
+The Morse Micro MM-IoT-SDK is downloaded automatically on first compile. No manual setup needed.
 
 ### Example YAML
 
@@ -73,7 +62,6 @@ mm_halow:
   country_code: "US"
   security: SAE                        # SAE (WPA3), OWE, or OPEN
   bcf_file: "bcf_mf16858_us.mbin"     # Board config for FGH100M-H (US)
-  mm_iot_sdk_path: "~/esp/mm-iot-esp32"
   # manual_ip:                         # Optional static IP
   #   static_ip: 192.168.12.100
   #   gateway: 192.168.12.1
@@ -208,7 +196,7 @@ Without step 4, inbound traffic (ping, API, OTA) will be blocked by NAT.
 
 ## Dependencies
 
-This component depends on the [Morse Micro MM-IoT-SDK](https://github.com/Seeed-Studio/mm-iot-esp32) which provides:
+This component depends on the [Morse Micro MM-IoT-SDK](https://github.com/sweitzja/mm-iot-esp32) (auto-downloaded on first compile) which provides:
 
 - **morselib** -- Prebuilt binary library containing the WLAN driver and crypto
 - **mm_shims** -- ESP-IDF HAL layer (SPI, GPIO, FreeRTOS integration)
@@ -220,8 +208,9 @@ The SDK is licensed under Apache-2.0 (shims/examples) and a Morse Micro BDL (bin
 
 ## References
 
-- [Seeed MM-IoT-SDK](https://github.com/Seeed-Studio/mm-iot-esp32) -- **Used by this component** (v2.6.4, with patches for IDF 5.5.2)
-- [Morse Micro MM-IoT-SDK](https://github.com/MorseMicro/mm-iot-esp32) -- Upstream (v2.10.4, IDF >=5.1.1, but US BCF missing)
+- [Pre-patched MM-IoT-SDK](https://github.com/sweitzja/mm-iot-esp32) -- **Auto-downloaded by this component** (Seeed v2.6.4, patched for IDF 5.5.2)
+- [Seeed MM-IoT-SDK (original)](https://github.com/Seeed-Studio/mm-iot-esp32) -- Original Seeed fork (requires manual patches)
+- [Morse Micro MM-IoT-SDK](https://github.com/MorseMicro/mm-iot-esp32) -- Upstream (v2.10.4, US BCF missing)
 - [Morse Micro morse-firmware](https://github.com/MorseMicro/morse-firmware) -- Additional BCF files for Quectel modules
 - [Morse Micro MM6108 Datasheet](https://www.morsemicro.com/chips/) -- SoC specifications
 - [Seeed Wiki: Getting Started with Wi-Fi HaLow](https://wiki.seeedstudio.com/getting_started_with_wifi_halow_module_for_xiao/) -- Hardware setup guide

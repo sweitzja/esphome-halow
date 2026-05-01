@@ -20,12 +20,16 @@ esphome-halow/
 └── README.md                  # User-facing documentation for ESPHome devs
 ```
 
-## Which SDK to Use
-**Seeed fork** (`~/esp/mm-iot-esp32/`) — patched for IDF 5.5.2 compatibility.
-The upstream SDK v2.10.4 compiles but its BCF files lack US regulatory config.
+## SDK Management
+The component auto-downloads a pre-patched fork of the Seeed MM-IoT-SDK to
+`~/.esphome/mm-iot-esp32/` on first compile. No manual setup needed.
 
-### Patches applied to Seeed SDK
-1. `idf_component.yml` files: `==5.1.1` -> `>=5.1.1` (6 files under framework/)
+- **Fork repo**: https://github.com/sweitzja/mm-iot-esp32 (pre-patched)
+- **Override path**: set `mm_iot_sdk_path` in YAML to use a local clone instead
+- The upstream SDK v2.10.4 compiles but its BCF files lack US regulatory config
+
+### Patches pre-applied in the fork
+1. `idf_component.yml` files: `==5.1.1` -> `>=5.1.1` (7 files under framework/)
 2. `mm_shims/mmosal_shim_freertos_esp32.c` line 127: added `SECONDARY` arg to `ESP_SYSTEM_INIT_FN`
 
 See HALOW_NOTES.md "Required Patches" section for exact commands.
