@@ -286,8 +286,9 @@ async def to_code(config):
     add_idf_sdkconfig_option("CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB", True)
     add_idf_sdkconfig_option("CONFIG_MBEDTLS_NIST_KW_C", True)
 
-    # Kconfig: LWIP callbacks for mmipal
+    # Kconfig: LWIP settings for mmipal
     add_idf_sdkconfig_option("CONFIG_LWIP_NETIF_STATUS_CALLBACK", True)
+    add_idf_sdkconfig_option("CONFIG_LWIP_STATS", True)  # Needed for TX/RX packet counters
     cg.add_build_flag("-DLWIP_NETIF_LINK_CALLBACK=1")
 
     # Disable mDNS predefined netif search — we register our own netif manually.
