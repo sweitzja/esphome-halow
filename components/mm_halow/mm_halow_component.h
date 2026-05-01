@@ -103,6 +103,7 @@ class MMHalowComponent : public Component {
   uint32_t connect_start_time_{0};
   uint32_t last_sensor_update_{0};
   uint32_t reconnect_count_{0};
+  uint32_t disconnect_time_{0};
   bool setup_complete_{false};
   bool mdns_started_{false};
   network::IPAddresses ip_addresses_{};

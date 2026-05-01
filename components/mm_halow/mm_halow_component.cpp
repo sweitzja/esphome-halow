@@ -219,6 +219,11 @@ void MMHalowComponent::loop() {
       if (this->check_ip_()) {
         // Connected and got IP
         this->state_ = HalowState::CONNECTED;
+        if (this->reconnect_count_ > 0) {
+          uint32_t downtime_s = (millis() - this->disconnect_time_) / 1000;
+          ESP_LOGI(TAG, "=== LINK RECOVERED === after %lus downtime (was attempt %lu)",
+                   (unsigned long) downtime_s, this->reconnect_count_);
+        }
         this->reconnect_count_ = 0;
         ESP_LOGI(TAG, "HaLow connected to '%s'", this->ssid_.c_str());
         this->last_sensor_update_ = 0;  // Force immediate sensor update
@@ -273,11 +278,13 @@ void MMHalowComponent::loop() {
 
       if (!sta_ok || !rssi_ok) {
         // Link dropped — start reconnect
+        int32_t last_rssi = mmwlan_get_rssi();
         this->state_ = HalowState::STOPPED;
         this->ip_addresses_ = {};
         this->reconnect_count_++;
-        ESP_LOGW(TAG, "Link lost (sta=%d rssi=%d), reconnecting (attempt %lu)...",
-                 (int) sta_ok, (int) rssi_ok, this->reconnect_count_);
+        this->disconnect_time_ = millis();
+        ESP_LOGW(TAG, "=== LINK LOST === (sta_connected=%d, rssi=%ld, attempt %lu)",
+                 (int) sta_ok, (long) last_rssi, this->reconnect_count_);
         mmwlan_sta_disable();
         this->connect_start_time_ = millis();  // Wait before retrying
       } else {
