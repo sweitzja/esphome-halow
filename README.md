@@ -4,6 +4,12 @@ ESPHome external component for **Wi-Fi HaLow** (IEEE 802.11ah) using the [Morse 
 
 This component provides a drop-in network interface for ESPHome, replacing `wifi:` with `mm_halow:`. It works like the built-in W5500/Ethernet SPI support: configure your pins, SSID, and password in YAML, and get full Home Assistant connectivity over HaLow.
 
+### Why HaLow over LoRa?
+
+HaLow uses standard IP networking — TCP, UDP, DHCP, mDNS, MQTT, and the ESPHome API all work natively. No protocol translation, no gateway bridges, no TTN accounts. Your HaLow device is just another IP device on your network that Home Assistant sees directly. OTA updates work over the same connection. Bidirectional control is instant (7ms latency). One AP supports 1000 devices with managed scheduling.
+
+LoRa still wins on raw range (10-15km vs ~1km) and power efficiency for simple one-way sensors, but for anything that needs reliable bidirectional communication, HaLow is dramatically cleaner.
+
 ## Supported Hardware
 
 ### HaLow Modules (MM6108-based)
@@ -166,6 +172,20 @@ All testing performed with XIAO ESP32-S3 + XIAO HaLow Hat + GL-iNet HaLowLink 2:
 | ESPHome compile (IDF 5.5.2) | Pass -- 1.08MB firmware, 59% flash usage |
 | **ESPHome full boot with sensors** | **Pass** -- RSSI (-35 dBm), IP, MAC, BSSID, FW version all reporting |
 | **mDNS discovery** | **Pass** -- `halow-test.local` registered on HaLow interface |
+| **LAN ping (power save off)** | **Pass** -- 10/10, 0% loss, 7-11ms latency |
+| **ESPHome API from LAN** | **Pass** -- TCP connect to port 6053 succeeded |
+| **20-min soak test** | **Pass** -- Heap stable (zero delta), 0 errors |
+
+## Access Point Setup
+
+The HaLowLink 2 must be configured in **bridge mode** for LAN devices to reach HaLow devices:
+
+1. Connect your LAN cable to the HaLowLink 2's **WAN port** (not LAN)
+2. Access the web UI at `https://<halowlink-ip>`
+3. Go to **Wizard** and select **"HaLow devices get IP on your existing router's network"**
+4. SSH in and disable masquerade: `uci set firewall.wlan.masq=0; uci commit firewall; /etc/init.d/firewall restart`
+
+Without step 4, inbound traffic (ping, API, OTA) will be blocked by NAT.
 
 ## Component Configuration
 

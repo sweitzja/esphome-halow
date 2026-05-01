@@ -392,6 +392,128 @@ All sensors are optional YAML config entries within the `mm_halow:` block:
 Sensors update every 10 seconds while connected. Static values (MAC, FW version, SSID)
 are published once on first connection.
 
+## Power Save and Battery Operation
+
+### Power Save Modes
+```c
+enum mmwlan_ps_mode { MMWLAN_PS_DISABLED, MMWLAN_PS_ENABLED };
+mmwlan_set_power_save_mode(MMWLAN_PS_DISABLED);  // Call after mmwlan_boot()
+```
+
+- **MMWLAN_PS_ENABLED (default)**: Radio wakes only at each beacon interval (100ms on
+  HaLowLink 2) to check for buffered frames. Between beacons, radio sleeps.
+  Saves power (~10-30mW avg) but causes missed inbound ARP/ICMP packets, making
+  the device intermittently unreachable. **This was the root cause of ping failures.**
+- **MMWLAN_PS_DISABLED**: Radio stays awake continuously (~100-200mW). Responds
+  instantly. Required for reliable bidirectional communication (API, OTA, ping).
+
+### Target Wake Time (TWT) — 802.11ah's Killer Feature
+TWT allows a device to negotiate a sleep schedule with the AP:
+- Device tells AP: "Wake me every N seconds for M milliseconds"
+- AP buffers packets and delivers them at the agreed time
+- Device stays associated but sleeps deeply between TWT windows
+- **No re-authentication needed** — skips the 8-10s WPA3-SAE handshake
+- Wake time drops to ~100-500ms (vs 10s for full reconnect)
+- API: `mmwlan_set_twt_setup()` (available in MM-IoT-SDK)
+- HaLowLink 2 supports TWT as AP
+
+### Battery Sensor Architecture
+For a battery-powered sensor, the flow would be:
+
+**Without TWT (simple deep sleep):**
+1. Wake from ESP32 deep sleep (GPIO/timer/sensor interrupt)
+2. Boot ESP32 (~300ms)
+3. mmhal_init + mmwlan_boot (~700ms, loads firmware over SPI)
+4. mmwlan_sta_enable — full WPA3-SAE handshake (~8-10s)
+5. Read sensor, send data (MQTT/API)
+6. mmwlan_sta_disable, enter ESP32 deep sleep
+7. **Total wake time: ~10-12 seconds per cycle**
+
+**With TWT (stay associated):**
+1. Wake from TWT interrupt
+2. Send buffered sensor data (~100-500ms)
+3. Receive any buffered commands from AP
+4. Sleep until next TWT window
+5. **Total wake time: ~100-500ms per cycle**
+
+### Power Budget Estimates
+- ESP32-S3 deep sleep: ~10μA
+- MM6108 held in reset (RESET_N low): ~0μA
+- HaLow TX burst: ~300mA for ~30ms
+- With TWT at 5-minute interval: ~50-100μA average
+- CR123A battery (1500mAh): months to years depending on interval
+
+### AP Idle Timeout
+Without TWT, the AP will disassociate the device after its idle timeout
+(typically 5-30 minutes of silence, configurable on HaLowLink). After
+disassociation, a full 10-second WPA3-SAE reconnect is required.
+
+## HaLow vs LoRa Comparison
+
+| Feature | Wi-Fi HaLow (802.11ah) | LoRa/LoRaWAN |
+|---------|----------------------|--------------|
+| **Protocol** | Standard IP (TCP/UDP/DHCP) | Proprietary, needs gateway translation |
+| **Range** | ~1 km | 10-15 km line-of-sight |
+| **Bandwidth** | Up to 32 Mbps | ~50 kbps |
+| **Latency** | 7-11 ms (measured) | Minutes (Class A downlink) |
+| **Direction** | Full bidirectional | Primarily uplink, limited downlink |
+| **Security** | WPA3-SAE | AppKey/NwkKey |
+| **OTA updates** | Native (same connection) | Complex, unreliable |
+| **Device density** | 1000/AP (managed scheduling) | Degrades with density (ALOHA) |
+| **Integration** | Direct IP — ESPHome, MQTT, HA native | Needs gateway + bridge + MQTT translation |
+| **Power (TX)** | ~300mA for ~30ms | ~30mA for ~30ms |
+| **Reconnect time** | 8-10s (WPA3-SAE) or 100ms (TWT) | ~1s |
+| **Module cost** | ~$15-20 (MM6108) | ~$5 (RFM95) |
+| **AP/Gateway cost** | ~$100+ (HaLowLink 2) | ~$150+ (LoRa gateway) or free (TTN) |
+| **Infrastructure** | Requires HaLow AP | Point-to-point possible with $5 modules |
+| **Ecosystem** | New (2025-2026) | Mature (since 2015) |
+
+**Use HaLow when**: You want a real IP network, bidirectional control, OTA updates,
+direct Home Assistant integration, and have power for an AP. Dozens of sensors around
+a building or campus.
+
+**Use LoRa when**: You need maximum range with minimum infrastructure — a sensor 5km
+away, one reading per hour, no need for commands back. Or when every microamp matters
+and you can't afford the WPA3 handshake overhead.
+
+## HaLowLink 2 AP Configuration
+
+### Network Mode (Critical)
+The HaLowLink 2 Quick Config Wizard controls bridging:
+- **"HaLow devices get IP on this device's network"** — Router/NAT mode (default).
+  HaLow devices are NATed. Cannot be reached from LAN.
+- **"HaLow devices get IP on your existing router's network"** — Bridge mode.
+  HaLow devices are L2 bridged to the WAN port. Same subnet as LAN.
+
+Access wizard at: `https://<halowlink-ip>/cgi-bin/luci/admin/morseapwizard`
+
+### Firewall Fix Required
+Even in bridge mode, the `wlan` firewall zone has `masq=1` (masquerade/NAT) enabled
+by default. This hides HaLow devices behind the HaLowLink's IP. **Must disable:**
+```bash
+ssh root@<halowlink-ip>  # password from device label
+uci set firewall.wlan.masq=0
+uci commit firewall
+/etc/init.d/firewall restart
+```
+
+### Port Wiring
+- **WAN port**: Connect to your LAN. In bridge mode, the wizard bridges WAN↔HaLow.
+- **LAN port**: Used for management access (separate bridge, not for HaLow traffic).
+- Plugging into the LAN port instead of WAN will get DHCP but no L2 bridging.
+
+### Bridge Topology
+```
+br-wlan: wlan0 (HaLow radio) + wan (WAN ethernet port)  ← bridged for data
+br-lan:  lan (LAN port) + phy0-ap0 (2.4GHz WiFi) + usblan  ← management
+```
+
+### LWIP netif_set_link_up Fix
+On ESP-IDF 5.5.2 with the Seeed SDK, the mmipal link-up callback doesn't fire
+reliably. Without `netif_set_link_up()`, LWIP won't respond to ARP even though
+the radio is connected. The component forces this after IP acquisition by finding
+the netif via MAC match in `netif_list`.
+
 ## Verified Test Results
 
 | Date | Test | Result |
@@ -405,6 +527,10 @@ are published once on first connection.
 | 2026-04-30 | ESPHome full boot with sensors | All sensors reporting, API+OTA running |
 | 2026-04-30 | mDNS registration | `halow-test.local` registered on HaLow interface |
 | 2026-04-30 | Upstream SDK (v2.10.4, IDF 5.5.2) | FW loads but connection fails (BCF issue) |
+| 2026-04-30 | 20-min soak test | Heap stable at 304,520 (zero delta), 0 errors |
+| 2026-05-01 | Ping from LAN (power save ON) | Intermittent: 5/20 success, ARP timeouts |
+| 2026-05-01 | Ping from LAN (power save OFF) | **10/10, 0% loss, 7-11ms latency** |
+| 2026-05-01 | ESPHome API port from LAN | TCP connect to 192.168.1.86:6053 succeeded |
 
 ### Working Configuration (Seeed SDK + IDF 5.5.2)
 ```
@@ -415,14 +541,17 @@ Actual SPI CLK 40000kHz
 HaLow MAC: A8:DD:9F:4D:C6:01
 Setup time: ~720ms (to mmwlan_sta_enable)
 Connection time: ~10s from cold boot
-RSSI: -35 to -37 dBm
-DHCP IP: 192.168.12.164
-Gateway: 192.168.12.1
+RSSI: -33 to -37 dBm
+Ping latency: 7-11ms (power save disabled)
+DHCP IP: 192.168.1.86 (bridged via HaLowLink 2 WAN port)
+Gateway: 192.168.1.1
 BSSID: 50:2E:91:D2:C9:E4
 BCF: bcf_mf16858_us.mbin
 mDNS: halow-test.local registered
-ESPHome API: port 6053
+ESPHome API: port 6053 (reachable from LAN)
 ESPHome OTA: port 3232
+Power save: disabled (required for reliable inbound connectivity)
+Heap: 304,520 bytes free (stable, no leaks)
 ```
 
 ## Development Environment

@@ -61,6 +61,21 @@ esphome upload example.yaml --device /dev/ttyACM0
 - Quectel BCFs from morse-firmware repo need `convert-bin-to-mbin.py` conversion
 - The `mmwlan_register_link_state_cb()` may not fire; use `mmipal_get_link_state()` polling as fallback
 - `LWIP_NETIF_LINK_CALLBACK=1` must be set via `-D` flag (no Kconfig in IDF 5.5)
+- **Power save MUST be disabled** for reliable inbound connectivity (ARP/ping/API)
+- Must force `netif_set_link_up()` after IP acquisition — mmipal callback doesn't fire on IDF 5.5
+
+## Power Save
+- `mmwlan_set_power_save_mode(MMWLAN_PS_DISABLED)` called after boot
+- Default PS_ENABLED causes radio to sleep between beacons, missing inbound ARP/ICMP
+- With PS disabled: 10/10 pings, 0% loss, 7-11ms latency
+- Future: TWT (Target Wake Time) for battery devices — negotiate sleep schedule with AP,
+  stay associated, wake time drops to ~100ms vs 10s full reconnect
+
+## HaLowLink 2 Setup
+- **WAN port** to LAN (not LAN port — wizard bridges WAN↔HaLow)
+- Wizard: "HaLow devices get IP on your existing router's network" (bridge mode)
+- Must disable masquerade: `uci set firewall.wlan.masq=0; uci commit firewall`
+- Device IP from main DHCP server (same subnet as LAN)
 
 ## mDNS Integration
 mDNS works via a fake `esp_netif_obj` wrapper around mmipal's raw LWIP netif:
@@ -74,10 +89,12 @@ mDNS works via a fake `esp_netif_obj` wrapper around mmipal's raw LWIP netif:
 ## Working Test Results
 ```
 FW: 1.13.1, morselib: 2.6.4-esp32, chip: 0x306
-MAC: A8:DD:9F:4D:C6:01, RSSI: -35 dBm
-IP: 192.168.12.164, GW: 192.168.12.1
+MAC: A8:DD:9F:4D:C6:01, RSSI: -34 dBm
+IP: 192.168.1.86, GW: 192.168.1.1 (bridged via HaLowLink 2)
+Ping: 10/10, 0% loss, 7-11ms (power save disabled)
 BSSID: 50:2E:91:D2:C9:E4, BCF: bcf_mf16858_us.mbin
 mDNS: halow-test.local registered
-ESPHome API (6053) + OTA (3232) running
-All sensors (RSSI, TX/RX packets, IP, gateway, BSSID, MAC, FW version) publishing
+ESPHome API port 6053: reachable from LAN
+Heap: 304,520 bytes (stable, zero leak over 20 min)
+All sensors publishing
 ```
