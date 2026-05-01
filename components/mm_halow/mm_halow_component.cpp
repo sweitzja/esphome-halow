@@ -396,8 +396,10 @@ void MMHalowComponent::start_mdns_() {
     return;
   }
 
-  // Set hostname
-  mdns_hostname_set(App.get_name().c_str());
+  // Set hostname and instance name
+  const char *hostname = App.get_name().c_str();
+  mdns_hostname_set(hostname);
+  mdns_instance_name_set(hostname);
 
   // Register our fake netif with mDNS
   err = mdns_register_netif((esp_netif_t *) fake);
@@ -421,7 +423,27 @@ void MMHalowComponent::start_mdns_() {
     ESP_LOGW(TAG, "mDNS announce failed: %s", esp_err_to_name(err));
   }
 
-  ESP_LOGI(TAG, "mDNS: registered '%s.local' on HaLow interface", App.get_name().c_str());
+  // Re-register ESPHome services. The ESPHome MDNSComponent ran during setup()
+  // before we had a network interface, so its mdns_service_add() calls failed.
+  // We re-register the _esphomelib._tcp service here so Home Assistant can
+  // discover this device.
+  // Register _esphomelib._tcp service for Home Assistant discovery
+  {
+    mdns_txt_item_t txt[] = {
+        {(char *) "version", (char *) ESPHOME_VERSION},
+        {(char *) "platform", (char *) "ESP32"},
+        {(char *) "board", (char *) ESPHOME_BOARD},
+        {(char *) "network", (char *) "halow"},
+    };
+    err = mdns_service_add(nullptr, "_esphomelib", "_tcp", 6053, txt, 4);
+    if (err == ESP_OK) {
+      ESP_LOGI(TAG, "mDNS: registered _esphomelib._tcp service");
+    } else {
+      ESP_LOGW(TAG, "mDNS: service add failed: %s", esp_err_to_name(err));
+    }
+  }
+
+  ESP_LOGI(TAG, "mDNS: registered '%s.local' on HaLow interface", hostname);
   this->mdns_started_ = true;
 }
 
