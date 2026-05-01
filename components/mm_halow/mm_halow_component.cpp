@@ -217,6 +217,21 @@ void MMHalowComponent::loop() {
         this->reconnect_count_ = 0;
         ESP_LOGI(TAG, "HaLow connected to '%s'", this->ssid_.c_str());
         this->last_sensor_update_ = 0;  // Force immediate sensor update
+
+        // Ensure the LWIP netif link is marked UP so ARP responses work.
+        // The mmipal link_up callback may not fire on all IDF/SDK combinations.
+        uint8_t mac[6];
+        mmwlan_get_mac_addr(mac);
+        for (struct netif *nif = netif_list; nif != nullptr; nif = nif->next) {
+          if (memcmp(nif->hwaddr, mac, 6) == 0) {
+            if (!netif_is_link_up(nif)) {
+              netif_set_link_up(nif);
+              ESP_LOGI(TAG, "Forced LWIP netif link UP");
+            }
+            break;
+          }
+        }
+
         if (!this->mdns_started_) {
           this->start_mdns_();
         }
