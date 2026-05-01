@@ -21,11 +21,11 @@ mm_halow:
   security: SAE                          # SAE (WPA3), OWE, or OPEN
   bcf_file: "bcf_mf16858_us.mbin"          # Board config for FGH100M-H (US)
   mm_iot_sdk_path: "~/esp/mm-iot-esp32"
-  # manual_ip:                           # Uncomment for static IP
-  #   static_ip: 192.168.12.100
-  #   gateway: 192.168.12.1
-  #   subnet: 255.255.255.0
-  #   dns1: 8.8.8.8
+  manual_ip:
+    static_ip: 192.168.1.86
+    gateway: 192.168.1.1
+    subnet: 255.255.255.0
+    dns1: 8.8.8.8
   # Pin defaults match XIAO HaLow Hat:
   # clk_pin: 7
   # mosi_pin: 9

@@ -48,6 +48,7 @@ MMHalowComponent *global_mm_halow_component = nullptr;  // NOLINT
 // --- SDK Callbacks (called from MM-IoT-SDK FreeRTOS tasks) ---
 
 static volatile bool s_link_up = false;
+static volatile bool s_sta_connected = false;
 
 static void link_state_cb(enum mmwlan_link_state state, void *arg) {
   s_link_up = (state == MMWLAN_LINK_UP);
@@ -61,6 +62,7 @@ static void link_state_cb(enum mmwlan_link_state state, void *arg) {
 static void sta_status_cb(enum mmwlan_sta_state state) {
   const char *states[] = {"DISABLED", "CONNECTING", "CONNECTED"};
   ESP_LOGI(TAG, "STA state: %s", states[state]);
+  s_sta_connected = (state == MMWLAN_STA_CONNECTED);
 }
 
 // --- Component Lifecycle ---
@@ -192,9 +194,12 @@ bool MMHalowComponent::check_ip_() {
   if (strcmp(ip_config.ip_addr, "0.0.0.0") == 0) {
     return false;
   }
-  this->ip_addresses_[0] = network::IPAddress(ip_config.ip_addr);
-  ESP_LOGI(TAG, "Got IP: %s, Gateway: %s, Netmask: %s",
-           ip_config.ip_addr, ip_config.gateway_addr, ip_config.netmask);
+  network::IPAddress new_ip(ip_config.ip_addr);
+  if (!this->ip_addresses_[0].is_set() || this->ip_addresses_[0] != new_ip) {
+    this->ip_addresses_[0] = new_ip;
+    ESP_LOGI(TAG, "Got IP: %s, Gateway: %s, Netmask: %s",
+             ip_config.ip_addr, ip_config.gateway_addr, ip_config.netmask);
+  }
   return true;
 }
 
@@ -204,9 +209,9 @@ void MMHalowComponent::loop() {
 
   switch (this->state_) {
     case HalowState::CONNECTING: {
-      // Check link via both callback flag AND direct mmipal poll
-      bool link_is_up = s_link_up || (mmipal_get_link_state() == MMIPAL_LINK_UP);
-      if (link_is_up && this->check_ip_()) {
+      // Accept connection if we have a valid IP — don't require link_state callback
+      // which may not fire reliably on all AP configurations
+      if (this->check_ip_()) {
         // Connected and got IP
         this->state_ = HalowState::CONNECTED;
         this->reconnect_count_ = 0;
@@ -237,7 +242,9 @@ void MMHalowComponent::loop() {
     }
 
     case HalowState::CONNECTED: {
-      if (!s_link_up && mmipal_get_link_state() != MMIPAL_LINK_UP) {
+      // Only consider disconnected if we've lost the IP AND the STA is not connected
+      bool ip_valid = this->check_ip_();
+      if (!ip_valid && !s_sta_connected) {
         // Link dropped — start reconnect
         this->state_ = HalowState::CONNECTING;
         this->ip_addresses_ = {};
