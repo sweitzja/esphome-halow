@@ -29,6 +29,8 @@ extern "C" {
 extern "C" {
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
+#include "esp_private/periph_ctrl.h"
+#include "soc/periph_defs.h"
 #include "lwip/netif.h"
 #include "lwip/tcpip.h"
 #include "mdns.h"
@@ -169,9 +171,11 @@ void MMHalowComponent::setup() {
   ESP_LOGI(TAG, "Setting up Wi-Fi HaLow (MM6108)...");
   global_mm_halow_component = this;
 
-  // Clean up any stale SPI bus state from a previous session (e.g., OTA reboot).
-  // spi_bus_initialize() fails if the bus is already initialized, causing mmhal_init()
-  // to hang and trigger the watchdog. Freeing it first ensures a clean start.
+  // Clean up stale SPI bus state from a previous session (e.g., OTA reboot).
+  // After esp_restart(), the SPI peripheral retains state from the previous session,
+  // causing mmhal_init() → spi_bus_initialize() to hang and trigger the watchdog.
+  // We force-reset the SPI2 peripheral hardware and free the driver state.
+  periph_module_reset(PERIPH_SPI2_MODULE);
   spi_bus_free(SPI2_HOST);  // Ignore error — may not be initialized
 
   // Hardware-reset the MM6108 to ensure clean chip state.
