@@ -60,7 +60,15 @@ mm_halow:
   ssid: "my-halow-ap"
   password: "my-password"
   country_code: "US"
-  # All other options have sensible defaults. See Component Configuration below.
+  security: SAE                        # SAE (WPA3), OWE, or OPEN
+  # sub_bands: false                   # false=max throughput (8MHz), true=max range (1-2MHz)
+  # manual_ip:                         # Optional static IP
+  #   static_ip: 192.168.12.100
+  #   gateway: 192.168.12.1
+  #   subnet: 255.255.255.0
+  # Pins default to XIAO HaLow Hat. Override for other boards:
+  # clk_pin: 7  / mosi_pin: 9 / miso_pin: 8 / cs_pin: 4
+  # irq_pin: 3 / reset_pin: 1 / wake_pin: 2 / busy_pin: 5
 
   # Optional diagnostic sensors
   rssi:
