@@ -581,6 +581,7 @@ the netif via MAC match in `netif_list`.
 | 2026-05-01 | AP power cycle reconnect | **Working** — LINK LOST → RECOVERED after 53s, no crash |
 | 2026-05-02 | Range walk reconnect | **Working** — 16s recovery via FreeRTOS timer, no crash |
 | 2026-05-02 | Range test RSSI profile | -29 (close) → -70 (edge) → STA DISABLED → reconnect at -60 |
+| 2026-05-02 | Antenna disconnect test | **Working** — 85s recovery (antenna off ~70s), 3 attempts, no crash |
 
 ### Working Configuration (Seeed SDK + IDF 5.5.2)
 ```
