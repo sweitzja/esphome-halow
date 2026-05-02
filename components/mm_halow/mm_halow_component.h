@@ -57,8 +57,8 @@ class MMHalowComponent : public Component {
   // Sensor setters
 #ifdef USE_SENSOR
   void set_rssi_sensor(sensor::Sensor *s) { this->rssi_sensor_ = s; }
-  void set_tx_packets_sensor(sensor::Sensor *s) { this->tx_packets_sensor_ = s; }
-  void set_rx_packets_sensor(sensor::Sensor *s) { this->rx_packets_sensor_ = s; }
+  void set_tx_pps_sensor(sensor::Sensor *s) { this->tx_pps_sensor_ = s; }
+  void set_rx_pps_sensor(sensor::Sensor *s) { this->rx_pps_sensor_ = s; }
   void set_mcs_sensor(sensor::Sensor *s) { this->mcs_sensor_ = s; }
   void set_bandwidth_sensor(sensor::Sensor *s) { this->bandwidth_sensor_ = s; }
   void set_tx_success_rate_sensor(sensor::Sensor *s) { this->tx_success_rate_sensor_ = s; }
@@ -121,8 +121,10 @@ class MMHalowComponent : public Component {
   // Sensors
 #ifdef USE_SENSOR
   sensor::Sensor *rssi_sensor_{nullptr};
-  sensor::Sensor *tx_packets_sensor_{nullptr};
-  sensor::Sensor *rx_packets_sensor_{nullptr};
+  sensor::Sensor *tx_pps_sensor_{nullptr};
+  sensor::Sensor *rx_pps_sensor_{nullptr};
+  uint32_t prev_tx_packets_{0};
+  uint32_t prev_rx_packets_{0};
   sensor::Sensor *mcs_sensor_{nullptr};
   sensor::Sensor *bandwidth_sensor_{nullptr};
   sensor::Sensor *tx_success_rate_sensor_{nullptr};

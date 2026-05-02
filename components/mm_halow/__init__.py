@@ -44,8 +44,8 @@ CONF_BUSY_PIN = "busy_pin"
 
 # Sensor config keys
 CONF_RSSI_SENSOR = "rssi"
-CONF_TX_PACKETS = "tx_packets"
-CONF_RX_PACKETS = "rx_packets"
+CONF_TX_PPS = "tx_pps"
+CONF_RX_PPS = "rx_pps"
 CONF_MCS = "mcs"
 CONF_BANDWIDTH = "bandwidth"
 CONF_TX_SUCCESS_RATE = "tx_success_rate"
@@ -122,15 +122,17 @@ CONFIG_SCHEMA = cv.All(
                 state_class=STATE_CLASS_MEASUREMENT,
                 entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
             ),
-            cv.Optional(CONF_TX_PACKETS): _sensor_schema(
-                accuracy_decimals=0,
-                state_class=STATE_CLASS_TOTAL_INCREASING,
+            cv.Optional(CONF_TX_PPS): _sensor_schema(
+                unit_of_measurement="pps",
+                accuracy_decimals=1,
+                state_class=STATE_CLASS_MEASUREMENT,
                 entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
                 icon="mdi:upload-network",
             ),
-            cv.Optional(CONF_RX_PACKETS): _sensor_schema(
-                accuracy_decimals=0,
-                state_class=STATE_CLASS_TOTAL_INCREASING,
+            cv.Optional(CONF_RX_PPS): _sensor_schema(
+                unit_of_measurement="pps",
+                accuracy_decimals=1,
+                state_class=STATE_CLASS_MEASUREMENT,
                 entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
                 icon="mdi:download-network",
             ),
@@ -228,8 +230,8 @@ async def to_code(config):
 
     for conf_key, setter in [
         (CONF_RSSI_SENSOR, var.set_rssi_sensor),
-        (CONF_TX_PACKETS, var.set_tx_packets_sensor),
-        (CONF_RX_PACKETS, var.set_rx_packets_sensor),
+        (CONF_TX_PPS, var.set_tx_pps_sensor),
+        (CONF_RX_PPS, var.set_rx_pps_sensor),
         (CONF_MCS, var.set_mcs_sensor),
         (CONF_BANDWIDTH, var.set_bandwidth_sensor),
         (CONF_TX_SUCCESS_RATE, var.set_tx_success_rate_sensor),

@@ -39,10 +39,10 @@ mm_halow:
   # Diagnostic sensors
   rssi:
     name: "HaLow RSSI"
-  tx_packets:
-    name: "HaLow TX Packets"
-  rx_packets:
-    name: "HaLow RX Packets"
+  tx_pps:
+    name: "HaLow TX Rate"
+  rx_pps:
+    name: "HaLow RX Rate"
   mcs:
     name: "HaLow MCS"
   bandwidth:
