@@ -73,6 +73,8 @@ mm_halow:
   # Optional diagnostic sensors
   rssi:
     name: "HaLow RSSI"
+  link_quality:
+    name: "HaLow Link Quality"
   ip_address:
     name: "HaLow IP"
   mac_address:
@@ -195,6 +197,22 @@ Without step 4, inbound traffic (ping, API, OTA) will be blocked by NAT.
 | `reset_pin` | int | `1` | Module reset GPIO (active low) |
 | `wake_pin` | int | `2` | Module wake GPIO |
 | `busy_pin` | int | `5` | Module busy GPIO |
+
+### Diagnostic Sensors
+
+| Sensor | Type | Description |
+|--------|------|-------------|
+| `rssi` | Numeric (dBm) | Signal strength |
+| `link_quality` | Text | Excellent / Good / Fair / Poor / Critical |
+| `mcs` | Numeric (0-7) | Modulation scheme — higher = faster, lower = more robust |
+| `bandwidth` | Numeric (MHz) | Channel width (1/2/4/8 MHz) |
+| `tx_success_rate` | Numeric (%) | Frame delivery rate without retransmission |
+| `tx_packets` / `rx_packets` | Numeric | Packet counters |
+| `ip_address` / `gateway_address` | Text | Network addresses |
+| `bssid` / `mac_address` | Text | Hardware addresses |
+| `connected_ssid` / `firmware_version` | Text | Connection info |
+
+The **Link Quality** sensor provides a plain-English summary of the radio link derived from MCS and TX success rate. The radio automatically adapts MCS based on signal conditions — MCS 7 at full speed near the AP, dropping to MCS 0 at maximum range.
 
 ## Dependencies
 

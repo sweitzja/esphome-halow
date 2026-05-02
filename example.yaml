@@ -61,6 +61,8 @@ mm_halow:
     name: "HaLow MAC Address"
   firmware_version:
     name: "HaLow FW Version"
+  link_quality:
+    name: "HaLow Link Quality"
 
 api:
 

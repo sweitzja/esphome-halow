@@ -71,6 +71,7 @@ class MMHalowComponent : public Component {
   void set_bssid_sensor(text_sensor::TextSensor *s) { this->bssid_sensor_ = s; }
   void set_mac_address_sensor(text_sensor::TextSensor *s) { this->mac_address_sensor_ = s; }
   void set_fw_version_sensor(text_sensor::TextSensor *s) { this->fw_version_sensor_ = s; }
+  void set_link_quality_sensor(text_sensor::TextSensor *s) { this->link_quality_sensor_ = s; }
 #endif
 
  protected:
@@ -139,6 +140,7 @@ class MMHalowComponent : public Component {
   text_sensor::TextSensor *bssid_sensor_{nullptr};
   text_sensor::TextSensor *mac_address_sensor_{nullptr};
   text_sensor::TextSensor *fw_version_sensor_{nullptr};
+  text_sensor::TextSensor *link_quality_sensor_{nullptr};
 #endif
 };
 

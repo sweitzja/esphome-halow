@@ -417,11 +417,14 @@ override with `mm_iot_sdk_path` in YAML. No manual clone or patches needed.
 All sensors are optional YAML config entries within the `mm_halow:` block:
 
 **Numeric sensors** (`sensor.sensor_schema()`):
-| Config Key    | Unit | Device Class      | Source API |
-|---------------|------|-------------------|------------|
-| `rssi`        | dBm  | signal_strength   | `mmwlan_get_rssi()` |
-| `tx_packets`  | —    | total_increasing  | `mmipal_get_link_packet_counts()` |
-| `rx_packets`  | —    | total_increasing  | `mmipal_get_link_packet_counts()` |
+| Config Key       | Unit | Device Class      | Source API |
+|------------------|------|-------------------|------------|
+| `rssi`           | dBm  | signal_strength   | `mmwlan_get_rssi()` |
+| `tx_packets`     | —    | total_increasing  | `mmipal_get_link_packet_counts()` |
+| `rx_packets`     | —    | total_increasing  | `mmipal_get_link_packet_counts()` |
+| `mcs`            | —    | measurement       | `mmwlan_get_rc_stats()` (delta-based) |
+| `bandwidth`      | MHz  | measurement       | `mmwlan_get_rc_stats()` (delta-based) |
+| `tx_success_rate` | %   | measurement       | `mmwlan_get_rc_stats()` (delta-based) |
 
 **Text sensors** (`text_sensor.text_sensor_schema()`):
 | Config Key         | Source API |
@@ -432,7 +435,31 @@ All sensors are optional YAML config entries within the `mm_halow:` block:
 | `connected_ssid`   | Config value (static) |
 | `bssid`            | `mmwlan_get_bssid()` |
 | `mac_address`      | `mmwlan_get_mac_addr()` |
-| `firmware_version`  | `mmwlan_get_version()` |
+| `firmware_version` | `mmwlan_get_version()` |
+| `link_quality`     | Derived from MCS + TX success rate |
+
+### Link Quality Sensor
+The `link_quality` text sensor provides a human-friendly summary of the radio link:
+
+| Value | MCS | TX Success | Meaning |
+|-------|-----|------------|---------|
+| Excellent | 5-7 | >95% | Full speed, strong signal |
+| Good | 3-4 | >90% | Moderate speed, reliable |
+| Fair | 1-2 | >80% | Reduced speed, usable |
+| Poor | 0 | >50% | Minimum speed, marginal |
+| Critical | any | <50% | Severe packet loss, link at risk |
+
+**MCS (Modulation and Coding Scheme)** is how the radio trades speed for range —
+equivalent to LoRa's spreading factor. MCS 7 is fastest (highest throughput, needs
+strong signal), MCS 0 is slowest (maximum range, works at weakest signal). The radio
+adapts MCS automatically per-frame based on channel conditions.
+
+**TX Success Rate** shows what percentage of frames are delivered without
+retransmission. Below 50% means most frames need multiple attempts.
+
+The rate control stats use **delta-based tracking** — comparing `mmwlan_get_rc_stats()`
+between 10-second update cycles to find the currently active rate, not the lifetime
+most-used rate.
 
 Sensors update every 10 seconds while connected. Static values (MAC, FW version, SSID)
 are published once on first connection.

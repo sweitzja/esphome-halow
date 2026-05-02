@@ -49,6 +49,7 @@ CONF_RX_PACKETS = "rx_packets"
 CONF_MCS = "mcs"
 CONF_BANDWIDTH = "bandwidth"
 CONF_TX_SUCCESS_RATE = "tx_success_rate"
+CONF_LINK_QUALITY = "link_quality"
 CONF_IP_ADDRESS_SENSOR = "ip_address"
 CONF_GATEWAY_SENSOR = "gateway_address"
 CONF_SUBNET_SENSOR = "subnet_mask"
@@ -179,6 +180,9 @@ CONFIG_SCHEMA = cv.All(
                 entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
                 icon="mdi:chip",
             ),
+            cv.Optional(CONF_LINK_QUALITY): _text_sensor_schema(
+                icon="mdi:wifi-strength-outline",
+            ),
         }
     ),
     cv.only_on_esp32,
@@ -242,6 +246,7 @@ async def to_code(config):
         (CONF_BSSID_SENSOR, var.set_bssid_sensor),
         (CONF_MAC_ADDRESS_SENSOR, var.set_mac_address_sensor),
         (CONF_FW_VERSION_SENSOR, var.set_fw_version_sensor),
+        (CONF_LINK_QUALITY, var.set_link_quality_sensor),
     ]:
         if conf_key in config:
             sens = await ts_ns.new_text_sensor(config[conf_key])

@@ -507,9 +507,29 @@ void MMHalowComponent::update_sensors_() {
                          (bw_raw == 2) ? 4.0f : 8.0f;
           this->bandwidth_sensor_->publish_state(bw_mhz);
         }
+        float success_pct = (total_delta_sent > 0)
+            ? (100.0f * total_delta_success / total_delta_sent) : 100.0f;
         if (this->tx_success_rate_sensor_ != nullptr && total_delta_sent > 0)
-          this->tx_success_rate_sensor_->publish_state(
-              100.0f * total_delta_success / total_delta_sent);
+          this->tx_success_rate_sensor_->publish_state(success_pct);
+
+        // Link Quality: human-friendly summary derived from MCS + TX success rate
+        // MCS 0-7 indicates radio adaptation, success rate indicates actual delivery
+#ifdef USE_TEXT_SENSOR
+        if (this->link_quality_sensor_ != nullptr) {
+          const char *quality;
+          if (mcs >= 5 && success_pct > 95.0f)
+            quality = "Excellent";
+          else if (mcs >= 3 && success_pct > 90.0f)
+            quality = "Good";
+          else if (mcs >= 1 && success_pct > 80.0f)
+            quality = "Fair";
+          else if (success_pct > 50.0f)
+            quality = "Poor";
+          else
+            quality = "Critical";
+          this->link_quality_sensor_->publish_state(quality);
+        }
+#endif
       }
       mmwlan_free_rc_stats(rc);
     }
