@@ -37,7 +37,7 @@ LoRa still wins on raw range (10-15km vs ~1km) and power efficiency for simple o
 - ESPHome 2024.2+ with ESP-IDF framework support
 - Git (for automatic SDK download on first compile)
 
-The Morse Micro MM-IoT-SDK is downloaded automatically on first compile. No manual setup needed.
+The [Morse Micro MM-IoT-SDK](https://github.com/MorseMicro/mm-iot-esp32) is downloaded automatically on first compile. No manual setup needed. No patches required.
 
 ### Example YAML
 
@@ -140,12 +140,10 @@ The MM6108 has no persistent firmware. Two binary files are embedded in the ESP3
 
 | File | Purpose | Size | Source |
 |------|---------|------|--------|
-| `mm6108.mbin` | MM6108 SoC firmware (v1.13.1) | ~400 KB | Seeed MM-IoT-SDK `framework/morsefirmware/` |
-| `bcf_mf16858_us.mbin` | Board config for FGH100M-H (US regulatory) | ~344 B | Seeed MM-IoT-SDK `framework/morsefirmware/` |
+| `mm6108.mbin` | MM6108 SoC firmware (v1.17.6) | ~400 KB | MM-IoT-SDK `framework/morsefirmware/` |
+| `bcf_mf16858.mbin` | Board config for FGH100M-H | ~2 KB | MM-IoT-SDK `framework/morsefirmware/mm6108/bcfs/` |
 
-**Important**: Firmware and BCF must be from the same SDK version. The Seeed SDK v2.6.4
-ships matching files that work together. See [HALOW_NOTES.md](HALOW_NOTES.md) for BCF
-compatibility details and other available BCF files.
+**Important**: Firmware and BCF must be from the same SDK version.
 
 ## Verified Test Results
 
@@ -154,7 +152,7 @@ All testing performed with XIAO ESP32-S3 + XIAO HaLow Hat + GL-iNet HaLowLink 2:
 | Test | Result |
 |------|--------|
 | SPI communication (SDIO registers) | Pass -- CCCR and FBR registers readable |
-| MM6108 firmware boot | Pass -- FW v1.13.1, morselib v2.6.4-esp32, chip ID 0x306 |
+| MM6108 firmware boot | Pass -- FW v1.17.6, morselib v2.10.4-esp32, chip ID 0x306 |
 | HaLow network scan | Pass -- Found AP at -41 dBm, 8 MHz BW |
 | WPA3-SAE authentication | Pass -- Link up in ~10 seconds |
 | DHCP IP acquisition | Pass -- 192.168.12.164 from gateway 192.168.12.1 |
@@ -191,7 +189,8 @@ Without step 4, inbound traffic (ping, API, OTA) will be blocked by NAT.
 | `ssid` | string | **required** | HaLow AP SSID |
 | `password` | string | **required** | WPA3-SAE passphrase |
 | `security` | enum | `SAE` | Security type: `SAE` (WPA3), `OWE`, or `OPEN` |
-| `bcf_file` | string | `bcf_mf16858_us.mbin` | Board configuration file |
+| `bcf_file` | string | `bcf_mf16858.mbin` | Board configuration file |
+| `sub_bands` | bool | `false` | `false` = 8 MHz max throughput, `true` = 1-2 MHz max range |
 | `manual_ip` | schema | *(DHCP)* | Static IP config (static_ip, gateway, subnet, dns1, dns2) |
 | `country_code` | string | `"US"` | Regulatory domain (US, AU, EU, JP, etc.) |
 | `clk_pin` | int | `7` | SPI clock GPIO |
@@ -221,7 +220,7 @@ The **Link Quality** sensor provides a plain-English summary of the radio link d
 
 ## Dependencies
 
-This component depends on the [Morse Micro MM-IoT-SDK](https://github.com/sweitzja/mm-iot-esp32) (auto-downloaded on first compile) which provides:
+This component depends on the [Morse Micro MM-IoT-SDK](https://github.com/MorseMicro/mm-iot-esp32) (auto-downloaded on first compile) which provides:
 
 - **morselib** -- Prebuilt binary library containing the WLAN driver and crypto
 - **mm_shims** -- ESP-IDF HAL layer (SPI, GPIO, FreeRTOS integration)
@@ -233,9 +232,8 @@ The SDK is licensed under Apache-2.0 (shims/examples) and a Morse Micro BDL (bin
 
 ## References
 
-- [Pre-patched MM-IoT-SDK](https://github.com/sweitzja/mm-iot-esp32) -- **Auto-downloaded by this component** (Seeed v2.6.4, patched for IDF 5.5.2)
-- [Seeed MM-IoT-SDK (original)](https://github.com/Seeed-Studio/mm-iot-esp32) -- Original Seeed fork (requires manual patches)
-- [Morse Micro MM-IoT-SDK](https://github.com/MorseMicro/mm-iot-esp32) -- Upstream (v2.10.4, US BCF missing)
+- [Morse Micro MM-IoT-SDK](https://github.com/MorseMicro/mm-iot-esp32) -- **Auto-downloaded by this component** (v2.10.4, native IDF 5.5.2)
+- [Seeed MM-IoT-SDK](https://github.com/Seeed-Studio/mm-iot-esp32) -- Seeed fork (v2.6.4, legacy)
 - [Morse Micro morse-firmware](https://github.com/MorseMicro/morse-firmware) -- Additional BCF files for Quectel modules
 - [Morse Micro MM6108 Datasheet](https://www.morsemicro.com/chips/) -- SoC specifications
 - [Seeed Wiki: Getting Started with Wi-Fi HaLow](https://wiki.seeedstudio.com/getting_started_with_wifi_halow_module_for_xiao/) -- Hardware setup guide

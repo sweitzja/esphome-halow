@@ -19,7 +19,8 @@ mm_halow:
   password: "your-password-here"
   country_code: "US"
   security: SAE                          # SAE (WPA3), OWE, or OPEN
-  bcf_file: "bcf_mf16858_us.mbin"          # Board config for FGH100M-H (US)
+  # bcf_file: "bcf_mf16858.mbin"            # Default BCF for FGH100M-H
+  # sub_bands: false                        # false=max throughput (8MHz), true=max range (1-2MHz)
   # mm_iot_sdk_path: "~/.esphome/mm-iot-esp32"  # Auto-downloaded if not present
   # manual_ip:
   #   static_ip: 192.168.1.86

@@ -50,6 +50,7 @@ CONF_MCS = "mcs"
 CONF_BANDWIDTH = "bandwidth"
 CONF_TX_SUCCESS_RATE = "tx_success_rate"
 CONF_LINK_QUALITY = "link_quality"
+CONF_SUB_BANDS = "sub_bands"
 CONF_IP_ADDRESS_SENSOR = "ip_address"
 CONF_GATEWAY_SENSOR = "gateway_address"
 CONF_SUBNET_SENSOR = "subnet_mask"
@@ -99,11 +100,12 @@ CONFIG_SCHEMA = cv.All(
                 SECURITY_TYPES, upper=True
             ),
             cv.Optional(
-                CONF_BCF_FILE, default="bcf_mf16858_us.mbin"
+                CONF_BCF_FILE, default="bcf_mf16858.mbin"
             ): cv.string_strict,
             cv.Optional(
                 CONF_MM_IOT_SDK_PATH, default="~/.esphome/mm-iot-esp32"
             ): cv.string,
+            cv.Optional(CONF_SUB_BANDS, default=False): cv.boolean,
             cv.Optional(CONF_MANUAL_IP): MANUAL_IP_SCHEMA,
             # SPI pins — defaults match XIAO HaLow Hat
             cv.Optional(CONF_CLK_PIN, default=7): cv.int_,
@@ -201,6 +203,7 @@ async def to_code(config):
     cg.add(var.set_password(config[CONF_PASSWORD]))
     cg.add(var.set_country_code(config[CONF_COUNTRY_CODE]))
     cg.add(var.set_security_type(config[CONF_SECURITY]))
+    cg.add(var.set_sub_bands_enabled(config[CONF_SUB_BANDS]))
 
     # Pin configuration
     cg.add(var.set_spi_clk_pin(config[CONF_CLK_PIN]))
@@ -259,7 +262,7 @@ async def to_code(config):
     # --- MM-IoT-SDK Integration ---
 
     # Resolve and auto-download SDK if needed
-    MM_IOT_SDK_REPO = "https://github.com/sweitzja/mm-iot-esp32.git"
+    MM_IOT_SDK_REPO = "https://github.com/MorseMicro/mm-iot-esp32.git"
 
     sdk_path = os.path.expanduser(config[CONF_MM_IOT_SDK_PATH])
     sdk_path = os.path.abspath(sdk_path)

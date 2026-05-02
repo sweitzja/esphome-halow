@@ -222,7 +222,12 @@ void MMHalowComponent::setup() {
   // Disable power save — keeps radio awake so device responds to ARP/ping reliably.
   // Without this, the radio sleeps between beacons and misses inbound packets.
   mmwlan_set_power_save_mode(MMWLAN_PS_DISABLED);
-  ESP_LOGI(TAG, "Power save disabled");
+  // Sub-band support: when enabled, the rate controller can drop to 1-2 MHz
+  // sub-bands for better sensitivity at extreme range. When disabled, forces
+  // full operating bandwidth (e.g., 8 MHz) for maximum throughput.
+  mmwlan_set_subbands_enabled(this->sub_bands_enabled_);
+  ESP_LOGI(TAG, "Power save disabled, sub-bands %s",
+           this->sub_bands_enabled_ ? "enabled (max range)" : "disabled (max throughput)");
 
   // Read and log version info
   struct mmwlan_version version;

@@ -40,6 +40,7 @@ class MMHalowComponent : public Component {
   void set_password(const std::string &password) { this->password_ = password; }
   void set_country_code(const std::string &cc) { this->country_code_ = cc; }
   void set_security_type(const std::string &type) { this->security_type_ = type; }
+  void set_sub_bands_enabled(bool enabled) { this->sub_bands_enabled_ = enabled; }
 
   void set_manual_ip(const std::string &ip, const std::string &gw,
                      const std::string &subnet, const std::string &dns1,
@@ -86,6 +87,7 @@ class MMHalowComponent : public Component {
   std::string password_;
   std::string country_code_{"US"};
   std::string security_type_{"SAE"};
+  bool sub_bands_enabled_{false};
 
   // Static IP
   bool use_static_ip_{false};

@@ -108,11 +108,11 @@ will either crash (`FW manifest pointer not set`) or silently fail to connect
 ### Firmware Files
 | File         | SDK Version    | FW Version | morselib        | Status |
 |--------------|----------------|------------|-----------------|--------|
-| `mm6108.mbin` (Seeed)   | v2.6.4-esp32 | 1.13.1 | 2.6.4-esp32  | **Working** |
-| `mm6108.mbin` (upstream) | v2.10.4-esp32 | 1.17.6 | 2.10.4-esp32 | Loads but connection fails |
+| `mm6108.mbin` (upstream) | v2.10.4-esp32 | 1.17.6 | 2.10.4-esp32 | **Working** (with sub-bands disabled) |
+| `mm6108.mbin` (Seeed)   | v2.6.4-esp32 | 1.13.1 | 2.6.4-esp32  | Working (legacy) |
 
-**Critical**: Firmware and BCF must be from the same SDK version. Mixing Seeed BCF with
-upstream firmware (or vice versa) causes `FW manifest pointer not set` crash.
+**Critical**: Firmware and BCF must be from the same SDK version. Mixing causes
+`FW manifest pointer not set` crash.
 
 ### How Firmware Loading Works
 1. ESP32 holds MM6108 in reset (RESET_N low)
@@ -125,63 +125,16 @@ upstream firmware (or vice versa) causes `FW manifest pointer not set` crash.
 8. Total boot time: ~700ms (to mmwlan_sta_enable call)
 9. WPA3-SAE connection completes ~8-10s after boot
 
-## SDK Compatibility and Patches
+## SDK History
 
-### Why Seeed SDK (v2.6.4), not upstream (v2.10.4)
+The component originally used the Seeed fork (v2.6.4) which required two patches for
+ESP-IDF 5.5.2 compatibility. The upstream MM-IoT-SDK v2.10.4 was found to work after
+two key fixes:
+1. `periph_module_reset(PERIPH_SPI2_MODULE)` — fixes SPI reinit after OTA/soft reboot
+2. `mmwlan_set_subbands_enabled(false)` — forces 8 MHz operation (upstream defaults to
+   sub-band support which drops to 2 MHz)
 
-The upstream MM-IoT-SDK v2.10.4 compiles and boots the MM6108 firmware on ESP-IDF 5.5.2,
-but the `bcf_mf16858.mbin` BCF it ships does not have US regulatory settings. The radio
-cannot scan/connect on 902-928 MHz. The Seeed fork v2.6.4 ships `bcf_mf16858_us.mbin`
-which works correctly.
-
-### Required Patches to Seeed SDK for ESP-IDF 5.5.2
-
-The Seeed fork is pinned to ESP-IDF 5.1.1 but works on 5.5.2 with two patches:
-
-**Patch 1: Relax IDF version constraints**
-
-All `idf_component.yml` files under `framework/` contain `version: "==5.1.1"`.
-Change to `version: ">=5.1.1"`:
-
-```bash
-find ~/esp/mm-iot-esp32/framework -name "idf_component.yml" \
-  -exec sed -i 's/version: "==5.1.1"/version: ">=5.1.1"/' {} \;
-```
-
-Files affected (6 total):
-- `framework/morselib/idf_component.yml`
-- `framework/mm_shims/idf_component.yml`
-- `framework/src/mmipal/idf_component.yml`
-- `framework/src/mmutils/idf_component.yml`
-- `framework/src/mmpktmem/idf_component.yml`
-- `framework/src/mmiperf/idf_component.yml`
-
-**Patch 2: Fix `ESP_SYSTEM_INIT_FN` macro for IDF 5.3+**
-
-ESP-IDF 5.3 added a `stage_` parameter to the `ESP_SYSTEM_INIT_FN` macro.
-In `framework/mm_shims/mmosal_shim_freertos_esp32.c`, line 127:
-
-```diff
--ESP_SYSTEM_INIT_FN(mmosal_dump_failure_info, BIT(0), 999)
-+ESP_SYSTEM_INIT_FN(mmosal_dump_failure_info, SECONDARY, BIT(0), 999)
-```
-
-```bash
-sed -i 's/ESP_SYSTEM_INIT_FN(mmosal_dump_failure_info, BIT(0), 999)/ESP_SYSTEM_INIT_FN(mmosal_dump_failure_info, SECONDARY, BIT(0), 999)/' \
-  ~/esp/mm-iot-esp32/framework/mm_shims/mmosal_shim_freertos_esp32.c
-```
-
-### Other SDK Differences
-
-| Feature | Seeed v2.6.4 | Upstream v2.10.4 |
-|---------|-------------|-----------------|
-| Regulatory DB | `mmwlan_regdb.def` (inline header) | `mmregdb` (separate IDF component) |
-| BCF format | Pre-built `.o` objects in mm_shims/ | Runtime objcopy from `.mbin` files |
-| BCF config | Kconfig choice (`CONFIG_MM_BCF_MF16858_US`) | Kconfig string (`CONFIG_MM_BCF_FILE`) |
-| IDF compat | `==5.1.1` (needs patch for 5.5.2) | `>=5.1.1` (native) |
-| FW binary | Pre-built `mm6108.mbin.o` in mm_shims/ | Runtime objcopy from mm6108.mbin |
-| mm_shims source | `mmhal.c`, `wlan_hal.c` | `mmhal_core.c`, `mmhal_os.c`, `mmhal_wlan.c` |
-| `driver` dep | Uses legacy `driver` component | Detects `esp_driver_*` split for IDF 5.3+ |
+The component now uses the **upstream SDK directly** with no patches needed.
 
 ## MM-IoT-SDK Architecture
 
@@ -398,13 +351,21 @@ original implementation. Without this, the API server disconnects all clients wi
 "Network down" because it thinks there's no network.
 
 ### SDK Auto-Download
-The MM-IoT-SDK is auto-downloaded from https://github.com/sweitzja/mm-iot-esp32
-(pre-patched fork) to `~/.esphome/mm-iot-esp32/` on first compile. Users can
-override with `mm_iot_sdk_path` in YAML. No manual clone or patches needed.
+The upstream Morse Micro MM-IoT-SDK is auto-downloaded from
+https://github.com/MorseMicro/mm-iot-esp32 to `~/.esphome/mm-iot-esp32/`
+on first compile. **No patches needed** — the upstream SDK natively supports
+ESP-IDF 5.5.2. Users can override with `mm_iot_sdk_path` in YAML.
+
+### Sub-Band Configuration
+The upstream SDK v2.10.4 enables sub-band support by default, which allows the
+rate controller to drop to 1-2 MHz channels. This drastically reduces throughput
+and RSSI compared to 8 MHz operation. The component disables sub-bands by default
+(`sub_bands: false`). Users who need maximum range at the expense of throughput
+can enable them with `sub_bands: true`.
 
 ### Build System
-- `add_idf_component(path=...)` for morselib, mm_shims, mmipal, mmutils, mmpktmem
-  (and mmregdb if present — upstream SDK only)
+- `add_idf_component(path=...)` for morselib, mm_shims, mmipal, mmutils, mmpktmem,
+  mmregdb
 - `add_idf_sdkconfig_option()` for Kconfig (pins, FreeRTOS, BCF, chip type, LWIP)
 - `pre_build.py` handles firmware blob linking with 3 fallback strategies:
   1. **ninja**: runs CMake custom targets (objcopy .mbin -> .o)

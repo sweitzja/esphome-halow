@@ -21,18 +21,13 @@ esphome-halow/
 ```
 
 ## SDK Management
-The component auto-downloads a pre-patched fork of the Seeed MM-IoT-SDK to
-`~/.esphome/mm-iot-esp32/` on first compile. No manual setup needed.
+The component auto-downloads the upstream Morse Micro MM-IoT-SDK to
+`~/.esphome/mm-iot-esp32/` on first compile. **No patches needed.**
 
-- **Fork repo**: https://github.com/sweitzja/mm-iot-esp32 (pre-patched)
-- **Override path**: set `mm_iot_sdk_path` in YAML to use a local clone instead
-- The upstream SDK v2.10.4 compiles but its BCF files lack US regulatory config
-
-### Patches pre-applied in the fork
-1. `idf_component.yml` files: `==5.1.1` -> `>=5.1.1` (7 files under framework/)
-2. `mm_shims/mmosal_shim_freertos_esp32.c` line 127: added `SECONDARY` arg to `ESP_SYSTEM_INIT_FN`
-
-See HALOW_NOTES.md "Required Patches" section for exact commands.
+- **Repo**: https://github.com/MorseMicro/mm-iot-esp32 (upstream, native IDF 5.5.2)
+- **Override path**: set `mm_iot_sdk_path` in YAML to use a local clone
+- FW v1.17.6, morselib v2.10.4-esp32
+- Sub-bands must be disabled for 8 MHz operation (`sub_bands: false`, the default)
 
 ## Hardware
 - **Host MCU**: Seeed XIAO ESP32-S3 (USB JTAG at /dev/ttyACM0 via usbipd)
@@ -124,6 +119,6 @@ OTA: 1.05MB in 8-13s, reboot + reconnect works
 Reconnect: FreeRTOS timer, 16s range walk recovery, no crash
 Link Quality: Excellent→Poor→Excellent (MCS 7→0→7 observed)
 Heap: stable, zero leak
-SDK: auto-downloaded from sweitzja/mm-iot-esp32
+SDK: auto-downloaded from MorseMicro/mm-iot-esp32 (upstream, no patches)
 Build: zero manual setup, ~140s clean compile
 ```
