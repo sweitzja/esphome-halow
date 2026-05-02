@@ -200,21 +200,177 @@ Without step 4, inbound traffic (ping, API, OTA) will be blocked by NAT.
 | `wake_pin` | int | `2` | Module wake GPIO |
 | `busy_pin` | int | `5` | Module busy GPIO |
 
-### Diagnostic Sensors
+### Sensors
 
-| Sensor | Type | Description |
-|--------|------|-------------|
-| `rssi` | Numeric (dBm) | Signal strength |
-| `link_quality` | Text | Excellent / Good / Fair / Poor / Critical |
-| `mcs` | Numeric (0-7) | Modulation scheme — higher = faster, lower = more robust |
-| `bandwidth` | Numeric (MHz) | Channel width (1/2/4/8 MHz) |
-| `tx_success_rate` | Numeric (%) | Frame delivery rate without retransmission |
-| `tx_packets` / `rx_packets` | Numeric | Packet counters |
-| `ip_address` / `gateway_address` | Text | Network addresses |
-| `bssid` / `mac_address` | Text | Hardware addresses |
-| `connected_ssid` / `firmware_version` | Text | Connection info |
+All sensors are optional. Add only the ones you need to your YAML. All sensors
+accept the standard ESPHome sensor configuration options (`name`, `id`, `filters`,
+`on_value`, etc.). Sensors update every 10 seconds while connected.
 
-The **Link Quality** sensor provides a plain-English summary of the radio link derived from MCS and TX success rate. The radio automatically adapts MCS based on signal conditions — MCS 7 at full speed near the AP, dropping to MCS 0 at maximum range.
+#### Signal Sensors
+
+##### `rssi`
+**Type**: Numeric sensor (dBm) | **Device class**: `signal_strength`
+
+Received Signal Strength Indicator — measures signal power from the AP.
+
+| RSSI Range | Signal Quality | Typical Scenario |
+|-----------|----------------|------------------|
+| -20 to -40 dBm | Excellent | Same room as AP, antenna tight |
+| -40 to -60 dBm | Good | Adjacent room, 10-50m |
+| -60 to -75 dBm | Fair | Through walls, 50-200m |
+| -75 to -85 dBm | Weak | Edge of range, packet loss likely |
+| Below -85 dBm | Critical | Connection will drop |
+
+```yaml
+rssi:
+  name: "HaLow RSSI"
+```
+
+##### `link_quality`
+**Type**: Text sensor
+
+Human-friendly summary of the radio link, derived from MCS and TX success rate.
+This is the single sensor most users should monitor — it combines the raw radio
+metrics into a plain-English assessment.
+
+| Value | MCS | TX Success Rate | What it means |
+|-------|-----|-----------------|---------------|
+| **Excellent** | 5-7 | >95% | Full speed, strong signal. Best throughput. |
+| **Good** | 3-4 | >90% | Moderate speed, reliable. Normal operation. |
+| **Fair** | 1-2 | >80% | Reduced speed but usable. Some retransmissions. |
+| **Poor** | 0 | >50% | Minimum speed, marginal link. Expect latency spikes. |
+| **Critical** | any | <50% | Severe packet loss. Connection at risk of dropping. |
+
+```yaml
+link_quality:
+  name: "HaLow Link Quality"
+```
+
+#### Radio Adaptation Sensors
+
+The HaLow radio **automatically adapts** its modulation and coding in real time based
+on channel conditions — similar to how LTE switches between bars of signal. These
+sensors let you observe the adaptation.
+
+##### `mcs`
+**Type**: Numeric sensor (0-7)
+
+Modulation and Coding Scheme — how the radio trades speed for reliability.
+The equivalent of LoRa's spreading factor, but changed automatically per-frame.
+
+| MCS | Modulation | Approx Data Rate (8 MHz) | Use Case |
+|-----|-----------|--------------------------|----------|
+| 7 | 64-QAM | 32.5 Mbps | Strong signal, max throughput |
+| 6 | 64-QAM | 26 Mbps | Strong signal |
+| 5 | 16-QAM | 19.5 Mbps | Good signal |
+| 4 | 16-QAM | 13 Mbps | Moderate signal |
+| 3 | QPSK | 9.75 Mbps | Moderate signal |
+| 2 | QPSK | 6.5 Mbps | Weak signal |
+| 1 | BPSK | 3.25 Mbps | Weak signal |
+| 0 | BPSK | 1.625 Mbps | Weakest signal, max range |
+
+The rate controller probes upward conservatively (one MCS step every ~10s) and drops
+instantly on packet loss. During testing, we observed MCS climb from 0 back to 7 over
+approximately 90 seconds after restoring a good antenna connection.
+
+```yaml
+mcs:
+  name: "HaLow MCS"
+```
+
+##### `bandwidth`
+**Type**: Numeric sensor (MHz)
+
+Channel width the radio is currently using. With `sub_bands: false` (default), this
+stays at the full operating bandwidth negotiated with the AP (typically 8 MHz).
+With `sub_bands: true`, the radio may drop to 1, 2, or 4 MHz for better sensitivity
+at extreme range.
+
+| Bandwidth | Relative Throughput | Relative Range |
+|-----------|-------------------|----------------|
+| 8 MHz | Highest | Shortest |
+| 4 MHz | ~50% | ~1.4x |
+| 2 MHz | ~25% | ~2x |
+| 1 MHz | ~12.5% | ~2.8x |
+
+```yaml
+bandwidth:
+  name: "HaLow Bandwidth"
+```
+
+##### `tx_success_rate`
+**Type**: Numeric sensor (%)
+
+Percentage of frames delivered to the AP without retransmission in the last update
+period (10 seconds). This is calculated from delta-based tracking of the MM6108's
+rate control statistics — it shows current performance, not lifetime average.
+
+| Success Rate | Meaning |
+|-------------|---------|
+| 95-100% | Clean channel, no interference |
+| 80-95% | Some retransmissions, still reliable |
+| 50-80% | Significant packet loss, link degrading |
+| Below 50% | Severe loss, connection at risk |
+
+```yaml
+tx_success_rate:
+  name: "HaLow TX Success Rate"
+```
+
+#### Traffic Sensors
+
+##### `tx_pps` / `rx_pps`
+**Type**: Numeric sensor (packets per second)
+
+Transmit and receive packet rates over the HaLow link. Useful for HA dashboard
+charts showing traffic patterns. Typical values with HA connected:
+
+| Condition | TX PPS | RX PPS |
+|-----------|--------|--------|
+| Idle (HA connected) | 1-3 | 15-20 |
+| Sensor updates | 3-5 | 20-30 |
+| OTA upload | 50-100 | 10-20 |
+
+```yaml
+tx_pps:
+  name: "HaLow TX Rate"
+rx_pps:
+  name: "HaLow RX Rate"
+```
+
+#### Network Info Sensors
+
+##### `ip_address`
+**Type**: Text sensor | Shows the device's current IPv4 address (DHCP or static).
+
+##### `gateway_address`
+**Type**: Text sensor | Shows the gateway/router IP address.
+
+##### `subnet_mask`
+**Type**: Text sensor | Shows the network subnet mask.
+
+##### `connected_ssid`
+**Type**: Text sensor | Shows the SSID of the connected HaLow AP. Published once on connect.
+
+##### `bssid`
+**Type**: Text sensor | Shows the MAC address of the connected AP (BSSID).
+
+##### `mac_address`
+**Type**: Text sensor | Shows the MM6108's own MAC address. Published once on connect.
+
+##### `firmware_version`
+**Type**: Text sensor | Shows the MM6108 firmware version (e.g., "1.17.6"). Published once on connect.
+
+```yaml
+ip_address:
+  name: "HaLow IP"
+gateway_address:
+  name: "HaLow Gateway"
+mac_address:
+  name: "HaLow MAC"
+firmware_version:
+  name: "HaLow FW Version"
+```
 
 ## Dependencies
 
