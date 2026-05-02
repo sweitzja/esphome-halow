@@ -468,10 +468,16 @@ void MMHalowComponent::update_sensors_() {
     uint32_t tx = 0, rx = 0;
     mmipal_get_link_packet_counts(&tx, &rx);
     float interval_s = SENSOR_UPDATE_INTERVAL_MS / 1000.0f;
-    if (this->tx_pps_sensor_ != nullptr && this->prev_tx_packets_ > 0)
-      this->tx_pps_sensor_->publish_state((float)(tx - this->prev_tx_packets_) / interval_s);
-    if (this->rx_pps_sensor_ != nullptr && this->prev_rx_packets_ > 0)
-      this->rx_pps_sensor_->publish_state((float)(rx - this->prev_rx_packets_) / interval_s);
+    if (this->prev_tx_packets_ > 0 && tx >= this->prev_tx_packets_) {
+      float tx_pps = (float)(tx - this->prev_tx_packets_) / interval_s;
+      if (this->tx_pps_sensor_ != nullptr && tx_pps < 10000.0f)  // sanity cap
+        this->tx_pps_sensor_->publish_state(tx_pps);
+    }
+    if (this->prev_rx_packets_ > 0 && rx >= this->prev_rx_packets_) {
+      float rx_pps = (float)(rx - this->prev_rx_packets_) / interval_s;
+      if (this->rx_pps_sensor_ != nullptr && rx_pps < 10000.0f)  // sanity cap
+        this->rx_pps_sensor_->publish_state(rx_pps);
+    }
     this->prev_tx_packets_ = tx;
     this->prev_rx_packets_ = rx;
   }
