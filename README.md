@@ -70,13 +70,41 @@ mm_halow:
   # clk_pin: 7  / mosi_pin: 9 / miso_pin: 8 / cs_pin: 4
   # irq_pin: 3 / reset_pin: 1 / wake_pin: 2 / busy_pin: 5
 
-  # Optional diagnostic sensors
+  # Signal sensors
   rssi:
     name: "HaLow RSSI"
   link_quality:
     name: "HaLow Link Quality"
+
+  # Radio adaptation sensors
+  mcs:
+    name: "HaLow MCS"
+  bandwidth:
+    name: "HaLow Bandwidth"
+  tx_success_rate:
+    name: "HaLow TX Success Rate"
+
+  # Traffic sensors
+  tx_pps:
+    name: "HaLow TX Rate"
+  rx_pps:
+    name: "HaLow RX Rate"
+
+  # Network info sensors
   ip_address:
     name: "HaLow IP"
+  gateway_address:
+    name: "HaLow Gateway"
+  subnet_mask:
+    name: "HaLow Subnet"
+  connected_ssid:
+    name: "HaLow SSID"
+  bssid:
+    name: "HaLow BSSID"
+  mac_address:
+    name: "HaLow MAC"
+  firmware_version:
+    name: "HaLow FW Version"
 
 api:
 
