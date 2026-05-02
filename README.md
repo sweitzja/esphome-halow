@@ -179,6 +179,11 @@ The HaLowLink 2 must be configured in **bridge mode** for LAN devices to reach H
 
 Without step 4, inbound traffic (ping, API, OTA) will be blocked by NAT.
 
+## Known Limitations
+
+- **Power save disabled** — The MM6108 BUSY pin has a firmware bug (confirmed by Morse Micro). Power save is disabled to ensure reliable bidirectional communication. Monitor [firmware releases](https://github.com/MorseMicro/firmware_binaries/releases/) for a fix.
+- **TWT not yet implemented** — Requires working BUSY pin for battery operation. A GPIO-based workaround exists but is not integrated.
+
 ## Component Configuration
 
 | Option | Type | Default | Description |

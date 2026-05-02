@@ -68,12 +68,19 @@ esphome upload example.yaml --device /dev/ttyACM0
 - **Power save MUST be disabled** for reliable inbound connectivity (ARP/ping/API)
 - Must force `netif_set_link_up()` after IP acquisition — mmipal callback doesn't fire on IDF 5.5
 
+## SPI Peripheral Reset (Critical for OTA)
+`periph_module_reset(PERIPH_SPI2_MODULE)` must be called before `mmhal_init()`.
+Without this, OTA reboot crash-loops because SPI2 hardware retains stale state
+from the previous session. Also call `spi_bus_free(SPI2_HOST)` to free driver state.
+
 ## Power Save
 - `mmwlan_set_power_save_mode(MMWLAN_PS_DISABLED)` called after boot
 - Default PS_ENABLED causes radio to sleep between beacons, missing inbound ARP/ICMP
 - With PS disabled: 10/10 pings, 0% loss, 7-11ms latency
-- Future: TWT (Target Wake Time) for battery devices — negotiate sleep schedule with AP,
-  stay associated, wake time drops to ~100ms vs 10s full reconnect
+- BUSY pin is broken in Morse Micro firmware (confirmed by MM community)
+- Workaround exists: `MORSE_CMD_PARAM_ID_WAKE_ACTION_GPIO` for alternate wake pin
+- Monitor https://github.com/MorseMicro/firmware_binaries/releases/ for BUSY fix
+- Future: TWT requires working BUSY pin or the GPIO workaround
 
 ## HaLowLink 2 Setup
 - **WAN port** to LAN (not LAN port — wizard bridges WAN↔HaLow)
@@ -113,8 +120,10 @@ Ping: 10/10, 0% loss, 7-11ms (power save disabled)
 BSSID: 50:2E:91:D2:C9:E4, BCF: bcf_mf16858_us.mbin
 mDNS: halow-test.local + _esphomelib._tcp registered
 HA: Home Assistant 2026.4.2 connected, all entities visible
-ESPHome API port 6053: reachable from LAN
-Heap: 304,520 bytes (stable, zero leak over 20 min)
+OTA: 1.05MB in 8-13s, reboot + reconnect works
+Reconnect: FreeRTOS timer, 16s range walk recovery, no crash
+Link Quality: Excellent→Poor→Excellent (MCS 7→0→7 observed)
+Heap: stable, zero leak
 SDK: auto-downloaded from sweitzja/mm-iot-esp32
 Build: zero manual setup, ~140s clean compile
 ```

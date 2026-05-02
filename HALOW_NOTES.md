@@ -479,6 +479,20 @@ mmwlan_set_power_save_mode(MMWLAN_PS_DISABLED);  // Call after mmwlan_boot()
 - **MMWLAN_PS_DISABLED**: Radio stays awake continuously (~100-200mW). Responds
   instantly. Required for reliable bidirectional communication (API, OTA, ping).
 
+### BUSY Pin Issue (Blocks Power Save / TWT)
+The BUSY pin signals when the MM6108 is awake and ready for SPI commands. It's
+essential for power save and TWT modes. **It's currently broken in Morse Micro firmware.**
+
+- Morse Micro community confirmed BUSY pin "is no longer happening" in recent firmware
+- This is a **firmware bug**, not a Seeed hardware issue — the XIAO HaLow Hat wires BUSY to GPIO 5
+- **Workaround**: use `MORSE_CMD_PARAM_ID_WAKE_ACTION_GPIO` to designate a different
+  MM6108 GPIO for wake signaling (confirmed working on STM32)
+- **Our current approach**: `MMWLAN_PS_DISABLED` bypasses the issue entirely
+- Monitor [Morse Micro firmware releases](https://github.com/MorseMicro/firmware_binaries/releases/)
+  for a fix
+
+Source: [STM32 Wakeup Issue with MM6108](https://community.morsemicro.com/t/stm32-wakeup-issue-with-mm6108-mf08551-standby-mode/841)
+
 ### Target Wake Time (TWT) — 802.11ah's Killer Feature
 TWT allows a device to negotiate a sleep schedule with the AP:
 - Device tells AP: "Wake me every N seconds for M milliseconds"
@@ -584,7 +598,35 @@ br-lan:  lan (LAN port) + phy0-ap0 (2.4GHz WiFi) + usblan  ← management
 On ESP-IDF 5.5.2 with the Seeed SDK, the mmipal link-up callback doesn't fire
 reliably. Without `netif_set_link_up()`, LWIP won't respond to ARP even though
 the radio is connected. The component forces this after IP acquisition by finding
-the netif via MAC match in `netif_list`.
+the netif via MAC match in `netif_list`. Must use `LOCK_TCPIP_CORE()` wrapper.
+
+### SPI Peripheral Reset (OTA Fix)
+After `esp_restart()` (OTA reboot), the ESP32's SPI2 peripheral retains hardware
+register state from the previous session. `mmhal_init()` calls `spi_bus_initialize()`
+which hangs because the peripheral is in a half-configured state → WDT crash.
+
+**Fix**: Call `periph_module_reset(PERIPH_SPI2_MODULE)` before `mmhal_init()` to
+force-reset the SPI2 hardware registers to power-on defaults. This clears all
+register state, DMA channels, and interrupt configuration.
+
+```c
+#include "esp_private/periph_ctrl.h"
+periph_module_reset(PERIPH_SPI2_MODULE);  // Reset SPI2 hardware
+spi_bus_free(SPI2_HOST);                   // Free driver state
+// ... hardware reset MM6108 via RESET_N ...
+mmhal_init();                              // Now succeeds
+```
+
+### OTA Updates
+- Upload: 1.05 MB in 8-13 seconds (~112 KB/s) over HaLow link
+- Reboot after OTA: works (requires SPI peripheral reset fix above)
+- Device reconnects to AP and HA automatically after OTA reboot
+
+### Firmware Release Monitoring
+Watch these repos for SDK updates (BUSY pin fix, IDF 5.5 native support):
+- [MorseMicro/mm-iot-esp32](https://github.com/MorseMicro/mm-iot-esp32) — ESP32 SDK
+- [MorseMicro/firmware_binaries](https://github.com/MorseMicro/firmware_binaries/releases/) — Firmware releases
+- [Morse Micro Community](https://community.morsemicro.com) — BUSY pin fix discussion
 
 ## Verified Test Results
 
@@ -609,6 +651,10 @@ the netif via MAC match in `netif_list`.
 | 2026-05-02 | Range walk reconnect | **Working** — 16s recovery via FreeRTOS timer, no crash |
 | 2026-05-02 | Range test RSSI profile | -29 (close) → -70 (edge) → STA DISABLED → reconnect at -60 |
 | 2026-05-02 | Antenna disconnect test | **Working** — 85s recovery (antenna off ~70s), 3 attempts, no crash |
+| 2026-05-02 | Repeated antenna cycles | **Working** — 2 cycles, 113s + 154s recovery, no crash |
+| 2026-05-02 | MCS adaptation observed | MCS 7→0→1→2→...→7 during antenna loosen/tighten |
+| 2026-05-02 | OTA over HaLow | **Working** — 1.05MB in 8-13s, reboot + reconnect clean |
+| 2026-05-02 | OTA reboot recovery | **Fixed** — periph_module_reset(SPI2) prevents crash loop |
 
 ### Working Configuration (Seeed SDK + IDF 5.5.2)
 ```
