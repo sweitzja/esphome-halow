@@ -96,11 +96,13 @@ ESPHome's `network::is_connected()` doesn't know about mm_halow. We use
 Without this, the API server disconnects all clients with "Network down".
 File: `network_wrap.cpp`
 
-## Reconnection
-- Disconnect detected via: STA callback, `mmwlan_get_sta_state()`, RSSI (INT32_MIN = no signal)
-- RSSI check catches gradual range loss before STA formally disconnects
-- Transitions to STOPPED (5s wait) then retries `start_connect_()`
-- Logs `=== LINK LOST ===` with reason and `=== LINK RECOVERED ===` with downtime
+## Reconnection (FreeRTOS Timer)
+- `mmipal_link_status_callback` detects LINK_DOWN, starts 15s FreeRTOS timer
+- Timer runs `do_halow_reconnect()`: `sta_disable()` + `sta_enable()` from timer task
+- **Must run from timer task, NOT main loop** — SDK wedges if called from main loop
+- `mmwlan_shutdown()`/`mmwlan_boot()` crashes WDT — don't use for reconnection
+- RSSI-triggered disconnect causes false positives — don't use
+- Verified: 16s recovery from range walk, no crash
 
 ## Working Test Results
 ```

@@ -163,6 +163,8 @@ All testing performed with XIAO ESP32-S3 + XIAO HaLow Hat + GL-iNet HaLowLink 2:
 | **LAN ping (power save off)** | **Pass** -- 10/10, 0% loss, 7-11ms latency |
 | **ESPHome API from LAN** | **Pass** -- TCP connect to port 6053 succeeded |
 | **20-min soak test** | **Pass** -- Heap stable (zero delta), 0 errors |
+| **Range walk reconnect** | **Pass** -- 16s recovery via FreeRTOS timer, no crash |
+| **AP power cycle reconnect** | **Pass** -- 53s recovery (AP boot time) |
 
 ## Access Point Setup
 

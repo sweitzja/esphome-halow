@@ -350,20 +350,41 @@ components/mm_halow/
 
 ### State Machine
 ```
-setup() ok ──► CONNECTING ─── valid IP ──► CONNECTED
-                   ▲  timeout 60s              │
-                   │                           │ STA disconnected
-               STOPPED ◄──────────────────────┘  OR RSSI = INT32_MIN
-                   │  wait 5s
-                   └──► CONNECTING (auto-reconnect)
+setup() ok ──► CONNECTING ─── STA connected + valid IP ──► CONNECTED
+                   ▲  timeout 60s                              │
+                   │                                           │ mmipal LINK_DOWN
+               STOPPED ◄──────────────────────────────────────┘
+                   │  wait 5s                                  │
+                   └──► CONNECTING                   FreeRTOS timer (15s)
+                                                         │
+                                                    sta_disable()
+                                                    sta_enable()
+                                                         │
+                                                    mmipal LINK_UP
+                                                         │
+                                                    ──► CONNECTED
 ```
 
-Disconnect detection (checked every loop iteration in CONNECTED state):
-- `s_sta_connected` flag from STA callback
-- `mmwlan_get_sta_state()` polled directly
-- `mmwlan_get_rssi()` — INT32_MIN means no signal (catches gradual range loss)
+### Reconnection Architecture (FreeRTOS Timer)
+Modeled after the Xiao-Halow-to-WiFi-Bridge project. **Critical**: the `sta_disable()`
+and `sta_enable()` calls must run from a FreeRTOS timer task, NOT from the ESPHome
+main loop. The 15-second delay lets the SDK clean up its internal state.
 
-Logs `=== LINK LOST ===` with reason and `=== LINK RECOVERED ===` with total downtime.
+1. `mmipal_link_status_callback()` fires `MMIPAL_LINK_DOWN`
+2. Callback starts a 15-second one-shot FreeRTOS timer (`pdFALSE`)
+3. Timer fires `do_halow_reconnect()` from the timer service task
+4. `mmwlan_sta_disable()` — cleans up the old association
+5. `mmwlan_sta_enable()` — starts fresh WPA3-SAE association
+6. On success, `mmipal_link_status_callback()` fires `MMIPAL_LINK_UP`
+7. If `sta_enable` fails, timer restarts for another 15s attempt
+
+**What doesn't work** (lessons learned):
+- Calling `sta_disable`/`sta_enable` from the main loop → SDK wedges
+- Calling `mmwlan_shutdown()` + `mmwlan_boot()` → WDT crash (SPI can't reinit)
+- RSSI-triggered disconnect → false triggers, crash loops from premature reconnect
+- Traffic watchdog alone → too slow (60s) or false positives
+
+Logs `=== LINK LOST ===` and `=== LINK RECOVERED === after Xs downtime`.
 
 ### Network Provider Integration
 ESPHome's `network::is_connected()` only checks USE_WIFI/USE_ETHERNET/etc.
@@ -558,8 +579,8 @@ the netif via MAC match in `netif_list`.
 | 2026-05-01 | Home Assistant connected | HA 2026.4.2 connected, all entities visible |
 | 2026-05-01 | Auto-download SDK | Clean build from scratch succeeds in ~140s |
 | 2026-05-01 | AP power cycle reconnect | **Working** — LINK LOST → RECOVERED after 53s, no crash |
-| 2026-05-01 | Out-of-range reconnect | **Working** — recovered after ~5.5min (multiple 60s retry cycles) |
-| 2026-05-01 | Range test RSSI profile | -30 (close) → -68 (edge) → disconnect → reconnect at -34 |
+| 2026-05-02 | Range walk reconnect | **Working** — 16s recovery via FreeRTOS timer, no crash |
+| 2026-05-02 | Range test RSSI profile | -29 (close) → -70 (edge) → STA DISABLED → reconnect at -60 |
 
 ### Working Configuration (Seeed SDK + IDF 5.5.2)
 ```
