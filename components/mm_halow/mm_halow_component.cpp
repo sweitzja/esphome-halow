@@ -468,15 +468,16 @@ void MMHalowComponent::update_sensors_() {
     uint32_t tx = 0, rx = 0;
     mmipal_get_link_packet_counts(&tx, &rx);
     float interval_s = SENSOR_UPDATE_INTERVAL_MS / 1000.0f;
-    if (this->prev_tx_packets_ > 0 && tx >= this->prev_tx_packets_) {
-      float tx_pps = (float)(tx - this->prev_tx_packets_) / interval_s;
-      if (this->tx_pps_sensor_ != nullptr && tx_pps < 10000.0f)  // sanity cap
-        this->tx_pps_sensor_->publish_state(tx_pps);
+    // Use signed delta to catch counter resets (wraps to negative = skip)
+    int32_t tx_delta = (int32_t)(tx - this->prev_tx_packets_);
+    int32_t rx_delta = (int32_t)(rx - this->prev_rx_packets_);
+    if (this->prev_tx_packets_ > 0 && tx_delta > 0 && tx_delta < 100000) {
+      if (this->tx_pps_sensor_ != nullptr)
+        this->tx_pps_sensor_->publish_state((float) tx_delta / interval_s);
     }
-    if (this->prev_rx_packets_ > 0 && rx >= this->prev_rx_packets_) {
-      float rx_pps = (float)(rx - this->prev_rx_packets_) / interval_s;
-      if (this->rx_pps_sensor_ != nullptr && rx_pps < 10000.0f)  // sanity cap
-        this->rx_pps_sensor_->publish_state(rx_pps);
+    if (this->prev_rx_packets_ > 0 && rx_delta > 0 && rx_delta < 100000) {
+      if (this->rx_pps_sensor_ != nullptr)
+        this->rx_pps_sensor_->publish_state((float) rx_delta / interval_s);
     }
     this->prev_tx_packets_ = tx;
     this->prev_rx_packets_ = rx;
