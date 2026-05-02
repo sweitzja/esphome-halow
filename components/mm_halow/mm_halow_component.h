@@ -30,6 +30,8 @@ class MMHalowComponent : public Component {
   float get_setup_priority() const override;
 
   bool is_connected() const { return this->state_ == HalowState::CONNECTED; }
+  const char *get_ssid() const { return this->ssid_.c_str(); }
+  const char *get_password() const { return this->password_.c_str(); }
   network::IPAddresses get_ip_addresses() const { return this->ip_addresses_; }
   std::string get_ip_address_str() const;
 
@@ -73,6 +75,7 @@ class MMHalowComponent : public Component {
   bool check_ip_();
   void update_sensors_();
   void start_mdns_();
+  void full_radio_reset_();
 
   // Config
   std::string ssid_;
@@ -104,6 +107,9 @@ class MMHalowComponent : public Component {
   uint32_t last_sensor_update_{0};
   uint32_t reconnect_count_{0};
   uint32_t disconnect_time_{0};
+  uint32_t last_rx_packets_{0};
+  uint32_t last_rx_check_time_{0};
+  uint8_t weak_rssi_count_{0};
   bool setup_complete_{false};
   bool mdns_started_{false};
   network::IPAddresses ip_addresses_{};

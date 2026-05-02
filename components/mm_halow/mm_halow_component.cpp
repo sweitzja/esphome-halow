@@ -47,11 +47,19 @@ static const uint32_t SENSOR_UPDATE_INTERVAL_MS = 10000;
 
 MMHalowComponent *global_mm_halow_component = nullptr;  // NOLINT
 
-// --- SDK Callbacks (called from MM-IoT-SDK FreeRTOS tasks) ---
+// --- SDK Callbacks and Reconnect Timer ---
+// Modeled after Xiao-Halow-to-WiFi-Bridge project which has working reconnection.
+// Key insight: reconnect must run from a FreeRTOS timer, NOT from the main loop
+// or from within a callback. The 15-second delay lets the SDK clean up internally.
 
 static volatile bool s_link_up = false;
-static volatile bool s_link_down_event = false;  // Set on link-down, cleared on reconnect
+static volatile bool s_link_down_event = false;
 static volatile bool s_sta_connected = false;
+static volatile bool s_reconnecting = false;
+static TimerHandle_t s_reconnect_timer = nullptr;
+
+// Forward declaration
+static void do_halow_reconnect(TimerHandle_t t);
 
 static void link_state_cb(enum mmwlan_link_state state, void *arg) {
   s_link_up = (state == MMWLAN_LINK_UP);
@@ -63,15 +71,22 @@ static void link_state_cb(enum mmwlan_link_state state, void *arg) {
   }
 }
 
-// mmipal link status callback — more reliable than mmwlan link state callback
+// mmipal link status callback — fires on link up/down from LWIP layer
 static void mmipal_link_status_cb(const struct mmipal_link_status *status) {
   if (status->link_state == MMIPAL_LINK_UP) {
     s_link_up = true;
+    s_reconnecting = false;
     ESP_LOGI(TAG, "mmipal link UP (IP: %s)", status->ip_addr);
   } else {
     s_link_up = false;
     s_link_down_event = true;
     ESP_LOGW(TAG, "mmipal link DOWN");
+    // Start reconnect timer (15 seconds) — same approach as Xiao-Halow-to-WiFi-Bridge
+    if (!s_reconnecting && s_reconnect_timer != nullptr) {
+      if (xTimerStart(s_reconnect_timer, 0) == pdPASS) {
+        ESP_LOGI(TAG, "Reconnect scheduled in 15s");
+      }
+    }
   }
 }
 
@@ -79,6 +94,57 @@ static void sta_status_cb(enum mmwlan_sta_state state) {
   const char *states[] = {"DISABLED", "CONNECTING", "CONNECTED"};
   ESP_LOGI(TAG, "STA state: %s", states[state]);
   s_sta_connected = (state == MMWLAN_STA_CONNECTED);
+}
+
+// Reconnect handler — runs from FreeRTOS timer task, NOT main loop
+static void do_halow_reconnect(TimerHandle_t t) {
+  (void) t;
+  if (s_link_up) {
+    // Already reconnected, nothing to do
+    return;
+  }
+
+  s_reconnecting = true;
+  ESP_LOGW(TAG, "=== RECONNECTING (from timer) ===");
+
+  enum mmwlan_status status = mmwlan_sta_disable();
+  if (status != MMWLAN_SUCCESS) {
+    ESP_LOGW(TAG, "sta_disable failed (%d), will retry", status);
+    s_reconnecting = false;
+    // Restart timer to retry
+    xTimerStart(s_reconnect_timer, 0);
+    return;
+  }
+
+  // Re-enable with stored config
+  struct mmwlan_sta_args sta_args = MMWLAN_STA_ARGS_INIT;
+  auto *comp = esphome::mm_halow::global_mm_halow_component;
+  if (comp == nullptr) {
+    s_reconnecting = false;
+    return;
+  }
+
+  sta_args.ssid_len = strlen(comp->get_ssid());
+  memcpy(sta_args.ssid, comp->get_ssid(), sta_args.ssid_len);
+  sta_args.passphrase_len = strlen(comp->get_password());
+  memcpy(sta_args.passphrase, comp->get_password(), sta_args.passphrase_len);
+  sta_args.security_type = MMWLAN_SAE;
+
+  // Reset flags
+  s_link_up = false;
+  s_link_down_event = false;
+  s_sta_connected = false;
+
+  ESP_LOGI(TAG, "sta_enable from timer...");
+  status = mmwlan_sta_enable(&sta_args, sta_status_cb);
+  if (status != MMWLAN_SUCCESS) {
+    ESP_LOGW(TAG, "sta_enable failed (%d), retrying in 15s", status);
+    s_reconnecting = false;
+    xTimerStart(s_reconnect_timer, 0);
+    return;
+  }
+  // If sta_enable succeeds, the mmipal callback will set s_reconnecting = false
+  // when link comes up
 }
 
 // --- Component Lifecycle ---
@@ -183,9 +249,17 @@ void MMHalowComponent::setup() {
     return;
   }
 
-  // Register mmipal link status callback — more reliable than mmwlan_register_link_state_cb
-  // for detecting disconnections. This fires from the LWIP/mmipal layer.
+  // Register mmipal link status callback — this handles reconnection via a FreeRTOS timer.
+  // The callback fires on link down, starts a 15-second timer, which then does
+  // sta_disable() + sta_enable() from the timer task context (not the main loop).
   mmipal_set_link_status_callback(mmipal_link_status_cb);
+
+  // Create reconnect timer (one-shot, 15 seconds)
+  s_reconnect_timer = xTimerCreate("halow_reconn", pdMS_TO_TICKS(15000),
+                                   pdFALSE, nullptr, do_halow_reconnect);
+  if (s_reconnect_timer == nullptr) {
+    ESP_LOGW(TAG, "Could not create reconnect timer");
+  }
 
   this->setup_complete_ = true;
   this->state_ = HalowState::CONNECTING;
@@ -227,6 +301,40 @@ void MMHalowComponent::start_connect_() {
   this->connect_start_time_ = millis();
 }
 
+void MMHalowComponent::full_radio_reset_() {
+  // Nuclear reset: completely shut down and reinitialize the WLAN stack.
+  // This is needed when the radio is stuck after walking out of range —
+  // simple sta_enable() can't recover because the SDK's internal state
+  // machine is wedged waiting for a response from a gone AP.
+  ESP_LOGW(TAG, "=== FULL RADIO RESET ===");
+
+  // 1. Disable STA (may fail if already in bad state, that's OK)
+  mmwlan_sta_disable();
+
+  // 2. Shut down the WLAN stack (powers down the MM6108)
+  enum mmwlan_status status = mmwlan_shutdown();
+  ESP_LOGI(TAG, "mmwlan_shutdown: %d", status);
+
+  // 3. Hardware reset the MM6108 via RESET_N pin
+  gpio_set_level((gpio_num_t) this->reset_pin_, 0);
+  vTaskDelay(pdMS_TO_TICKS(100));
+  gpio_set_level((gpio_num_t) this->reset_pin_, 1);
+  vTaskDelay(pdMS_TO_TICKS(100));
+
+  // 4. Re-boot the MM6108 (reload firmware + BCF over SPI)
+  struct mmwlan_boot_args boot_args = MMWLAN_BOOT_ARGS_INIT;
+  status = mmwlan_boot(&boot_args);
+  if (status != MMWLAN_SUCCESS) {
+    ESP_LOGE(TAG, "mmwlan_boot failed after reset: %d", status);
+    return;
+  }
+
+  // 5. Disable power save again
+  mmwlan_set_power_save_mode(MMWLAN_PS_DISABLED);
+
+  ESP_LOGI(TAG, "Radio reset complete, ready to reconnect");
+}
+
 bool MMHalowComponent::check_ip_() {
   struct mmipal_ip_config ip_config;
   if (mmipal_get_ip_config(&ip_config) != MMIPAL_SUCCESS) {
@@ -264,6 +372,9 @@ void MMHalowComponent::loop() {
         this->reconnect_count_ = 0;
         ESP_LOGI(TAG, "HaLow connected to '%s'", this->ssid_.c_str());
         this->last_sensor_update_ = 0;  // Force immediate sensor update
+        this->last_rx_check_time_ = millis();  // Reset traffic watchdog
+        this->last_rx_packets_ = 0;
+        this->weak_rssi_count_ = 0;
 
         // Ensure the LWIP netif link is marked UP so ARP responses work.
         // Must hold the LWIP core lock — netif_set_link_up asserts this on IDF 5.5.
@@ -287,17 +398,11 @@ void MMHalowComponent::loop() {
           this->start_mdns_();
         }
       } else if (millis() - this->connect_start_time_ > CONNECT_TIMEOUT_MS) {
-        // Timeout — retry connection
+        // Timeout — the FreeRTOS reconnect timer should be handling this,
+        // but if we're stuck in CONNECTING, go to STOPPED to let it retry
         this->reconnect_count_++;
-        ESP_LOGW(TAG, "Connect timeout, retrying (attempt %lu)...", this->reconnect_count_);
-
-        // Only disable STA every 3rd attempt to avoid crashing the SDK.
-        // Simple re-enable often works for re-association after range loss.
-        if (this->reconnect_count_ % 3 == 0) {
-          ESP_LOGI(TAG, "Full STA disable/enable cycle");
-          mmwlan_sta_disable();
-        }
-
+        ESP_LOGW(TAG, "Connect timeout (attempt %lu), waiting for timer retry...",
+                 this->reconnect_count_);
         this->connect_start_time_ = millis();
         this->state_ = HalowState::STOPPED;
       }
@@ -315,29 +420,17 @@ void MMHalowComponent::loop() {
     }
 
     case HalowState::CONNECTED: {
-      // Disconnect detection — multiple strategies:
-      // 1. mmipal link-down event (most reliable — fires from LWIP layer)
-      // 2. STA callback + state query
-      // 3. RSSI unmeasurable (INT32_MIN = no signal / radio stuck)
-      bool link_down = s_link_down_event;
-      bool sta_ok = s_sta_connected ||
-                    (mmwlan_get_sta_state() == MMWLAN_STA_CONNECTED);
-      bool rssi_ok = (mmwlan_get_rssi() != INT32_MIN);
-
-      if (link_down || !sta_ok || !rssi_ok) {
-        // Link dropped — disable STA and schedule reconnect
-        int32_t last_rssi = mmwlan_get_rssi();
-        this->state_ = HalowState::STOPPED;
+      // Disconnect detection: mmipal link_status_callback handles reconnection
+      // via a FreeRTOS timer (do_halow_reconnect). We just update our state here.
+      if (s_link_down_event || s_reconnecting) {
+        this->state_ = HalowState::CONNECTING;
         this->ip_addresses_ = {};
-        this->reconnect_count_++;
-        this->disconnect_time_ = millis();
-        s_link_down_event = false;
-        ESP_LOGW(TAG, "=== LINK LOST === (link_down=%d, sta=%d, rssi=%ld, attempt %lu)",
-                 (int) link_down, (int) sta_ok, (long) last_rssi, this->reconnect_count_);
-        // Don't call sta_disable here — just let start_connect_() re-enable.
-        // Calling sta_disable after a hard disconnect can put the SDK in a bad state
-        // that causes watchdog crashes on subsequent boot.
-        this->connect_start_time_ = millis();  // Wait before retrying
+        if (s_link_down_event) {
+          this->reconnect_count_++;
+          this->disconnect_time_ = millis();
+          s_link_down_event = false;
+          ESP_LOGW(TAG, "=== LINK LOST === (mmipal callback triggered reconnect timer)");
+        }
       } else {
         // Update sensors periodically
         uint32_t now = millis();
