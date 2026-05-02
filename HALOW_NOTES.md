@@ -561,27 +561,33 @@ reliably. Without `netif_set_link_up()`, LWIP won't respond to ARP even though
 the radio is connected. The component forces this after IP acquisition by finding
 the netif via MAC match in `netif_list`. Must use `LOCK_TCPIP_CORE()` wrapper.
 
-### SPI Peripheral Reset (OTA Fix)
-After `esp_restart()` (OTA reboot), the ESP32's SPI2 peripheral retains hardware
-register state from the previous session. `mmhal_init()` calls `spi_bus_initialize()`
-which hangs because the peripheral is in a half-configured state → WDT crash.
+### OTA Shutdown Handler (Critical for Reliable OTA)
+After `esp_restart()` (OTA reboot), the ESP32's SPI2 peripheral and the MM-IoT-SDK's
+internal state are corrupted. Simply resetting the SPI hardware on boot is insufficient.
 
-**Fix**: Call `periph_module_reset(PERIPH_SPI2_MODULE)` before `mmhal_init()` to
-force-reset the SPI2 hardware registers to power-on defaults. This clears all
-register state, DMA channels, and interrupt configuration.
+**Fix**: Register `esp_register_shutdown_handler()` that runs BEFORE `esp_restart()`:
 
 ```c
-#include "esp_private/periph_ctrl.h"
-periph_module_reset(PERIPH_SPI2_MODULE);  // Reset SPI2 hardware
-spi_bus_free(SPI2_HOST);                   // Free driver state
-// ... hardware reset MM6108 via RESET_N ...
-mmhal_init();                              // Now succeeds
+static void halow_shutdown_handler() {
+    mmwlan_sta_disable();              // Disconnect STA
+    mmwlan_shutdown();                 // Power down MM6108
+    mmwlan_deinit();                   // Clean up SDK + SPI bus
+    periph_module_reset(PERIPH_SPI2_MODULE);  // Reset SPI hardware
+    gpio_set_level(RESET_N, 0);        // Hold MM6108 in reset
+}
+
+// In setup():
+esp_register_shutdown_handler(halow_shutdown_handler);
 ```
+
+This properly deinitializes the WLAN stack and SPI bus while still running, so the
+next boot starts with a clean slate. Verified with 3 consecutive OTA cycles, all clean.
 
 ### OTA Updates
 - Upload: 1.05 MB in 8-13 seconds (~112 KB/s) over HaLow link
-- Reboot after OTA: works (requires SPI peripheral reset fix above)
+- Reboot after OTA: reliable (shutdown handler cleans up before restart)
 - Device reconnects to AP and HA automatically after OTA reboot
+- Verified: 3 consecutive OTA uploads, zero crash loops
 
 ### Firmware Release Monitoring
 Watch these repos for SDK updates (BUSY pin fix, IDF 5.5 native support):

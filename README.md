@@ -191,6 +191,7 @@ All testing performed with XIAO ESP32-S3 + XIAO HaLow Hat + GL-iNet HaLowLink 2:
 | **20-min soak test** | **Pass** -- Heap stable (zero delta), 0 errors |
 | **Range walk reconnect** | **Pass** -- 16s recovery via FreeRTOS timer, no crash |
 | **AP power cycle reconnect** | **Pass** -- 53s recovery (AP boot time) |
+| **OTA over HaLow** | **Pass** -- 1.05MB in 10s, 3 consecutive OTA cycles clean |
 
 ## Access Point Setup
 

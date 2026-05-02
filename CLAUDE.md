@@ -48,7 +48,8 @@ esphome upload example.yaml --device 192.168.1.86
 ```
 
 ## MM-IoT-SDK API Flow (what the component wraps)
-1. `periph_module_reset(PERIPH_SPI2_MODULE)` -- reset SPI hardware (critical for OTA)
+0. `esp_register_shutdown_handler()` -- register OTA cleanup (sta_disable→shutdown→deinit→periph_reset)
+1. `periph_module_reset(PERIPH_SPI2_MODULE)` -- reset SPI hardware (belt + suspenders)
 2. `spi_bus_free(SPI2_HOST)` -- free stale driver state
 3. Hardware reset MM6108 via RESET_N pin toggle
 4. `mmhal_init()` -- SPI bus + GPIO init
@@ -62,7 +63,7 @@ esphome upload example.yaml --device 192.168.1.86
 12. `mmwlan_sta_enable()` -- starts WPA3-SAE connection
 
 ## Critical Technical Notes
-- `periph_module_reset(PERIPH_SPI2_MODULE)` before `mmhal_init()` — fixes OTA reboot crash
+- OTA shutdown handler: `mmwlan_sta_disable→shutdown→deinit→periph_reset` before restart — essential for clean OTA reboot
 - `mmwlan_set_subbands_enabled(false)` — forces 8 MHz; without this, upstream SDK defaults to 2 MHz
 - FW and BCF must be from the same SDK version (mixing causes `FW manifest pointer not set` crash)
 - `LWIP_NETIF_LINK_CALLBACK=1` set via `-D` flag (no Kconfig in IDF 5.5)
