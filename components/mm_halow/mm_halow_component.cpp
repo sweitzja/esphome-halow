@@ -30,6 +30,7 @@ extern "C" {
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
 #include "esp_private/periph_ctrl.h"
+#include "esp_system.h"
 #include "soc/periph_defs.h"
 #include "lwip/netif.h"
 #include "lwip/tcpip.h"
@@ -167,14 +168,31 @@ void MMHalowComponent::set_manual_ip(const std::string &ip, const std::string &g
   this->static_dns2_ = dns2;
 }
 
+// Shutdown handler — called before esp_restart() during OTA.
+// Properly deinits the WLAN stack and SPI bus so the next boot starts clean.
+static void halow_shutdown_handler() {
+  ESP_LOGI(TAG, "Shutdown: cleaning up WLAN and SPI...");
+  mmwlan_sta_disable();
+  mmwlan_shutdown();
+  // The SDK's deinit handles spi_bus_remove_device + spi_bus_free internally
+  mmwlan_deinit();
+  // Also reset the SPI peripheral hardware registers
+  periph_module_reset(PERIPH_SPI2_MODULE);
+  // Hold MM6108 in reset so it's clean for next boot
+  gpio_set_level((gpio_num_t) CONFIG_MM_RESET_N, 0);
+  ESP_LOGI(TAG, "Shutdown: cleanup complete");
+}
+
 void MMHalowComponent::setup() {
   ESP_LOGI(TAG, "Setting up Wi-Fi HaLow (MM6108)...");
   global_mm_halow_component = this;
 
-  // Clean up stale SPI bus state from a previous session (e.g., OTA reboot).
-  // After esp_restart(), the SPI peripheral retains state from the previous session,
-  // causing mmhal_init() → spi_bus_initialize() to hang and trigger the watchdog.
-  // We force-reset the SPI2 peripheral hardware and free the driver state.
+  // Register shutdown handler for clean OTA reboot.
+  // This runs before esp_restart() and properly shuts down the WLAN stack + SPI bus.
+  esp_register_shutdown_handler(halow_shutdown_handler);
+
+  // Reset SPI peripheral hardware (handles cold boot and cases where
+  // shutdown handler didn't run, e.g., watchdog or power-loss reboot)
   periph_module_reset(PERIPH_SPI2_MODULE);
   spi_bus_free(SPI2_HOST);  // Ignore error — may not be initialized
 
