@@ -460,6 +460,57 @@ void MMHalowComponent::update_sensors_() {
     if (this->rx_packets_sensor_ != nullptr)
       this->rx_packets_sensor_->publish_state((float) rx);
   }
+
+  // Rate control stats: find the CURRENTLY active rate by comparing deltas
+  // since last update. The rate with the most new packets sent since last
+  // check is the one the radio is using right now.
+  if (this->mcs_sensor_ != nullptr || this->bandwidth_sensor_ != nullptr ||
+      this->tx_success_rate_sensor_ != nullptr) {
+    struct mmwlan_rc_stats *rc = mmwlan_get_rc_stats();
+    if (rc != nullptr && rc->n_entries > 0) {
+      uint32_t n = rc->n_entries;
+      if (n > MAX_RC_ENTRIES) n = MAX_RC_ENTRIES;
+
+      // Find rate with most NEW packets since last snapshot
+      uint32_t max_delta = 0;
+      uint32_t best_idx = 0;
+      uint32_t total_delta_sent = 0;
+      uint32_t total_delta_success = 0;
+      for (uint32_t i = 0; i < n; i++) {
+        uint32_t delta = rc->total_sent[i] - this->prev_rc_sent_[i];
+        if (delta > max_delta) {
+          max_delta = delta;
+          best_idx = i;
+        }
+        total_delta_sent += delta;
+        total_delta_success += (rc->total_success[i] - this->prev_rc_success_[i]);
+      }
+
+      // Save snapshot for next update
+      for (uint32_t i = 0; i < n; i++) {
+        this->prev_rc_sent_[i] = rc->total_sent[i];
+        this->prev_rc_success_[i] = rc->total_success[i];
+      }
+      this->prev_rc_count_ = n;
+
+      if (max_delta > 0) {
+        uint32_t info = rc->rate_info[best_idx];
+        uint8_t bw = (info >> 0) & 0xF;
+        uint8_t mcs = (info >> 4) & 0xF;
+
+        if (this->mcs_sensor_ != nullptr)
+          this->mcs_sensor_->publish_state((float) mcs);
+        if (this->bandwidth_sensor_ != nullptr) {
+          float bw_mhz = (bw == 0) ? 1.0f : (bw == 1) ? 2.0f : (bw == 2) ? 4.0f : 8.0f;
+          this->bandwidth_sensor_->publish_state(bw_mhz);
+        }
+        if (this->tx_success_rate_sensor_ != nullptr && total_delta_sent > 0)
+          this->tx_success_rate_sensor_->publish_state(
+              100.0f * total_delta_success / total_delta_sent);
+      }
+      mmwlan_free_rc_stats(rc);
+    }
+  }
 #endif
 
 #ifdef USE_TEXT_SENSOR

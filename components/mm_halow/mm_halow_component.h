@@ -59,6 +59,9 @@ class MMHalowComponent : public Component {
   void set_rssi_sensor(sensor::Sensor *s) { this->rssi_sensor_ = s; }
   void set_tx_packets_sensor(sensor::Sensor *s) { this->tx_packets_sensor_ = s; }
   void set_rx_packets_sensor(sensor::Sensor *s) { this->rx_packets_sensor_ = s; }
+  void set_mcs_sensor(sensor::Sensor *s) { this->mcs_sensor_ = s; }
+  void set_bandwidth_sensor(sensor::Sensor *s) { this->bandwidth_sensor_ = s; }
+  void set_tx_success_rate_sensor(sensor::Sensor *s) { this->tx_success_rate_sensor_ = s; }
 #endif
 #ifdef USE_TEXT_SENSOR
   void set_ip_address_sensor(text_sensor::TextSensor *s) { this->ip_address_sensor_ = s; }
@@ -119,6 +122,14 @@ class MMHalowComponent : public Component {
   sensor::Sensor *rssi_sensor_{nullptr};
   sensor::Sensor *tx_packets_sensor_{nullptr};
   sensor::Sensor *rx_packets_sensor_{nullptr};
+  sensor::Sensor *mcs_sensor_{nullptr};
+  sensor::Sensor *bandwidth_sensor_{nullptr};
+  sensor::Sensor *tx_success_rate_sensor_{nullptr};
+  // Previous rc_stats snapshot for delta computation
+  static const uint8_t MAX_RC_ENTRIES = 32;
+  uint32_t prev_rc_sent_[MAX_RC_ENTRIES]{};
+  uint32_t prev_rc_success_[MAX_RC_ENTRIES]{};
+  uint32_t prev_rc_count_{0};
 #endif
 #ifdef USE_TEXT_SENSOR
   text_sensor::TextSensor *ip_address_sensor_{nullptr};

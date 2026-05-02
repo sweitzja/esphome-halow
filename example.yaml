@@ -43,6 +43,12 @@ mm_halow:
     name: "HaLow TX Packets"
   rx_packets:
     name: "HaLow RX Packets"
+  mcs:
+    name: "HaLow MCS"
+  bandwidth:
+    name: "HaLow Bandwidth"
+  tx_success_rate:
+    name: "HaLow TX Success Rate"
   ip_address:
     name: "HaLow IP Address"
   gateway_address:

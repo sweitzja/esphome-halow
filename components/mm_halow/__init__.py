@@ -46,6 +46,9 @@ CONF_BUSY_PIN = "busy_pin"
 CONF_RSSI_SENSOR = "rssi"
 CONF_TX_PACKETS = "tx_packets"
 CONF_RX_PACKETS = "rx_packets"
+CONF_MCS = "mcs"
+CONF_BANDWIDTH = "bandwidth"
+CONF_TX_SUCCESS_RATE = "tx_success_rate"
 CONF_IP_ADDRESS_SENSOR = "ip_address"
 CONF_GATEWAY_SENSOR = "gateway_address"
 CONF_SUBNET_SENSOR = "subnet_mask"
@@ -130,6 +133,26 @@ CONFIG_SCHEMA = cv.All(
                 entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
                 icon="mdi:download-network",
             ),
+            cv.Optional(CONF_MCS): _sensor_schema(
+                accuracy_decimals=0,
+                state_class=STATE_CLASS_MEASUREMENT,
+                entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+                icon="mdi:signal-variant",
+            ),
+            cv.Optional(CONF_BANDWIDTH): _sensor_schema(
+                unit_of_measurement="MHz",
+                accuracy_decimals=0,
+                state_class=STATE_CLASS_MEASUREMENT,
+                entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+                icon="mdi:signal-variant",
+            ),
+            cv.Optional(CONF_TX_SUCCESS_RATE): _sensor_schema(
+                unit_of_measurement="%",
+                accuracy_decimals=1,
+                state_class=STATE_CLASS_MEASUREMENT,
+                entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+                icon="mdi:check-network",
+            ),
             # Text sensors
             cv.Optional(CONF_IP_ADDRESS_SENSOR): _text_sensor_schema(
                 entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
@@ -203,6 +226,9 @@ async def to_code(config):
         (CONF_RSSI_SENSOR, var.set_rssi_sensor),
         (CONF_TX_PACKETS, var.set_tx_packets_sensor),
         (CONF_RX_PACKETS, var.set_rx_packets_sensor),
+        (CONF_MCS, var.set_mcs_sensor),
+        (CONF_BANDWIDTH, var.set_bandwidth_sensor),
+        (CONF_TX_SUCCESS_RATE, var.set_tx_success_rate_sensor),
     ]:
         if conf_key in config:
             sens = await sensor_ns.new_sensor(config[conf_key])
