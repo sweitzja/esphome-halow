@@ -28,6 +28,7 @@ extern "C" {
 // ESP-IDF headers for mDNS integration
 extern "C" {
 #include "driver/gpio.h"
+#include "driver/spi_master.h"
 #include "lwip/netif.h"
 #include "lwip/tcpip.h"
 #include "mdns.h"
@@ -168,14 +169,16 @@ void MMHalowComponent::setup() {
   ESP_LOGI(TAG, "Setting up Wi-Fi HaLow (MM6108)...");
   global_mm_halow_component = this;
 
-  // Hardware-reset the MM6108 before init. If the chip is in a bad state
-  // from a previous session (e.g., out-of-range disconnect), mmhal_init()
-  // will hang on SPI and trigger the watchdog. Toggling RESET_N ensures
-  // the chip starts clean regardless of previous state.
+  // Clean up any stale SPI bus state from a previous session (e.g., OTA reboot).
+  // spi_bus_initialize() fails if the bus is already initialized, causing mmhal_init()
+  // to hang and trigger the watchdog. Freeing it first ensures a clean start.
+  spi_bus_free(SPI2_HOST);  // Ignore error — may not be initialized
+
+  // Hardware-reset the MM6108 to ensure clean chip state.
   gpio_set_direction((gpio_num_t) this->reset_pin_, GPIO_MODE_OUTPUT);
-  gpio_set_level((gpio_num_t) this->reset_pin_, 0);  // Assert reset
+  gpio_set_level((gpio_num_t) this->reset_pin_, 0);
   vTaskDelay(pdMS_TO_TICKS(100));
-  gpio_set_level((gpio_num_t) this->reset_pin_, 1);  // Release reset
+  gpio_set_level((gpio_num_t) this->reset_pin_, 1);
   vTaskDelay(pdMS_TO_TICKS(100));
   ESP_LOGI(TAG, "MM6108 hardware reset complete");
 
