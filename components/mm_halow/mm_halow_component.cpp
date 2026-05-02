@@ -495,13 +495,16 @@ void MMHalowComponent::update_sensors_() {
 
       if (max_delta > 0) {
         uint32_t info = rc->rate_info[best_idx];
-        uint8_t bw = (info >> 0) & 0xF;
+        uint8_t bw_raw = (info >> 0) & 0xF;
         uint8_t mcs = (info >> 4) & 0xF;
+        uint8_t gi = (info >> 8) & 0x1;
 
         if (this->mcs_sensor_ != nullptr)
           this->mcs_sensor_->publish_state((float) mcs);
         if (this->bandwidth_sensor_ != nullptr) {
-          float bw_mhz = (bw == 0) ? 1.0f : (bw == 1) ? 2.0f : (bw == 2) ? 4.0f : 8.0f;
+          // BW encoding: 0=1MHz, 1=2MHz, 2=4MHz, 3=8MHz (per 802.11ah)
+          float bw_mhz = (bw_raw == 0) ? 1.0f : (bw_raw == 1) ? 2.0f :
+                         (bw_raw == 2) ? 4.0f : 8.0f;
           this->bandwidth_sensor_->publish_state(bw_mhz);
         }
         if (this->tx_success_rate_sensor_ != nullptr && total_delta_sent > 0)
