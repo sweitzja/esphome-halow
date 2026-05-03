@@ -31,5 +31,6 @@ venv/
 
 # Secrets
 secrets.yaml
+test.yaml
 *.pem
 *.key
