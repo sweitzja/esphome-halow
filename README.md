@@ -195,16 +195,28 @@ All testing performed with XIAO ESP32-S3 + XIAO HaLow Hat + GL-iNet HaLowLink 2:
 | **AP power cycle reconnect** | **Pass** -- 53s recovery (AP boot time) |
 | **OTA over HaLow** | **Pass** -- 1.05MB in 10s, 3 consecutive OTA cycles clean |
 
-## Access Point Setup
+## Access Point Setup (Required)
 
-The HaLowLink 2 must be configured in **bridge mode** for LAN devices to reach HaLow devices:
+The HaLowLink 2 **must be in AP mode** and configured for **bridging** so that Home Assistant
+and other LAN devices can reach HaLow devices. Without this setup, the ESP32 will connect
+to the HaLow AP but will not be reachable from your network — HA won't be able to discover
+or communicate with the device.
 
-1. Connect your LAN cable to the HaLowLink 2's **WAN port** (not LAN)
-2. Access the web UI at `https://<halowlink-ip>`
-3. Go to **Wizard** and select **"HaLow devices get IP on your existing router's network"**
-4. SSH in and disable masquerade: `uci set firewall.wlan.masq=0; uci commit firewall; /etc/init.d/firewall restart`
+1. Set the HaLowLink 2 to **AP mode** using the mode button or web UI
+2. Connect your LAN cable to the HaLowLink 2's **WAN port** (not LAN — the wizard bridges WAN↔HaLow)
+3. Access the web UI at `https://<halowlink-ip>` (check your router's DHCP leases for the IP)
+4. Go to **Wizard** and select **"HaLow devices get IP on your existing router's network"**
+5. SSH in and disable masquerade:
+   ```bash
+   ssh root@<halowlink-ip>   # password is on the device label
+   uci set firewall.wlan.masq=0
+   uci commit firewall
+   /etc/init.d/firewall restart
+   ```
 
-Without step 4, inbound traffic (ping, API, OTA) will be blocked by NAT.
+**Important**: Step 5 is critical. Even in bridge mode, the HaLowLink 2 enables NAT (masquerade)
+on the HaLow interface by default. Without disabling it, HaLow devices can reach the internet
+but nothing on your LAN can reach them — no ping, no API, no OTA, no HA discovery.
 
 ## Known Limitations
 
