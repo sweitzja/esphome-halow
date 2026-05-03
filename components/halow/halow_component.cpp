@@ -8,7 +8,7 @@
  * SDK callbacks fire from FreeRTOS tasks; we use volatile flags polled in loop().
  */
 
-#include "mm_halow_component.h"
+#include "halow_component.h"
 #include "esphome/core/log.h"
 #include "esphome/core/application.h"
 
@@ -18,7 +18,7 @@ extern "C" {
 #include "mmosal.h"
 #include "mmwlan.h"
 #include "mmipal.h"
-#ifdef USE_MM_HALOW_REGDB
+#ifdef USE_HALOW_REGDB
 #include "mmregdb.h"
 #else
 #include "mmwlan_regdb.def"
@@ -42,14 +42,14 @@ extern "C" {
 }
 
 namespace esphome {
-namespace mm_halow {
+namespace halow {
 
-static const char *const TAG = "mm_halow";
+static const char *const TAG = "halow";
 
 static const uint32_t CONNECT_TIMEOUT_MS = 60000;
 static const uint32_t SENSOR_UPDATE_INTERVAL_MS = 10000;
 
-MMHalowComponent *global_mm_halow_component = nullptr;  // NOLINT
+HalowComponent *global_halow_component = nullptr;  // NOLINT
 
 // --- SDK Callbacks and Reconnect Timer ---
 // Modeled after Xiao-Halow-to-WiFi-Bridge project which has working reconnection.
@@ -122,7 +122,7 @@ static void do_halow_reconnect(TimerHandle_t t) {
 
   // Re-enable with stored config
   struct mmwlan_sta_args sta_args = MMWLAN_STA_ARGS_INIT;
-  auto *comp = esphome::mm_halow::global_mm_halow_component;
+  auto *comp = esphome::halow::global_halow_component;
   if (comp == nullptr) {
     s_reconnecting = false;
     return;
@@ -153,11 +153,11 @@ static void do_halow_reconnect(TimerHandle_t t) {
 
 // --- Component Lifecycle ---
 
-float MMHalowComponent::get_setup_priority() const {
+float HalowComponent::get_setup_priority() const {
   return setup_priority::WIFI;
 }
 
-void MMHalowComponent::set_manual_ip(const std::string &ip, const std::string &gw,
+void HalowComponent::set_manual_ip(const std::string &ip, const std::string &gw,
                                      const std::string &subnet, const std::string &dns1,
                                      const std::string &dns2) {
   this->use_static_ip_ = true;
@@ -183,9 +183,9 @@ static void halow_shutdown_handler() {
   ESP_LOGI(TAG, "Shutdown: cleanup complete");
 }
 
-void MMHalowComponent::setup() {
+void HalowComponent::setup() {
   ESP_LOGI(TAG, "Setting up Wi-Fi HaLow (MM6108)...");
-  global_mm_halow_component = this;
+  global_halow_component = this;
 
   // Register shutdown handler for clean OTA reboot.
   // This runs before esp_restart() and properly shuts down the WLAN stack + SPI bus.
@@ -296,7 +296,7 @@ void MMHalowComponent::setup() {
   this->start_connect_();
 }
 
-void MMHalowComponent::start_connect_() {
+void HalowComponent::start_connect_() {
   struct mmwlan_sta_args sta_args = MMWLAN_STA_ARGS_INIT;
 
   sta_args.ssid_len = this->ssid_.length();
@@ -331,7 +331,7 @@ void MMHalowComponent::start_connect_() {
   this->connect_start_time_ = millis();
 }
 
-void MMHalowComponent::full_radio_reset_() {
+void HalowComponent::full_radio_reset_() {
   // Nuclear reset: completely shut down and reinitialize the WLAN stack.
   // This is needed when the radio is stuck after walking out of range —
   // simple sta_enable() can't recover because the SDK's internal state
@@ -365,7 +365,7 @@ void MMHalowComponent::full_radio_reset_() {
   ESP_LOGI(TAG, "Radio reset complete, ready to reconnect");
 }
 
-bool MMHalowComponent::check_ip_() {
+bool HalowComponent::check_ip_() {
   struct mmipal_ip_config ip_config;
   if (mmipal_get_ip_config(&ip_config) != MMIPAL_SUCCESS) {
     return false;
@@ -382,7 +382,7 @@ bool MMHalowComponent::check_ip_() {
   return true;
 }
 
-void MMHalowComponent::loop() {
+void HalowComponent::loop() {
   if (!this->setup_complete_)
     return;
 
@@ -474,7 +474,7 @@ void MMHalowComponent::loop() {
   }
 }
 
-void MMHalowComponent::update_sensors_() {
+void HalowComponent::update_sensors_() {
 #ifdef USE_SENSOR
   if (this->rssi_sensor_ != nullptr) {
     int32_t rssi = mmwlan_get_rssi();
@@ -622,7 +622,7 @@ void MMHalowComponent::update_sensors_() {
 #endif
 }
 
-void MMHalowComponent::start_mdns_() {
+void HalowComponent::start_mdns_() {
   // Find mmipal's LWIP netif by matching HaLow MAC address
   uint8_t mac[6];
   if (mmwlan_get_mac_addr(mac) != MMWLAN_SUCCESS) {
@@ -653,7 +653,7 @@ void MMHalowComponent::start_mdns_() {
   fake->lwip_netif = mm_netif;
   fake->flags = (esp_netif_flags_t)(ESP_NETIF_FLAG_AUTOUP);
   fake->if_key = strdup("MM_HALOW_DEF");
-  fake->if_desc = strdup("mm_halow");
+  fake->if_desc = strdup("halow");
   fake->route_prio = 50;
 
   // Initialize mDNS. ESPHome's mdns component may have already tried and failed
@@ -720,7 +720,7 @@ void MMHalowComponent::start_mdns_() {
   this->mdns_started_ = true;
 }
 
-void MMHalowComponent::dump_config() {
+void HalowComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "Wi-Fi HaLow (MM6108):");
   ESP_LOGCONFIG(TAG, "  SSID: '%s'", this->ssid_.c_str());
   ESP_LOGCONFIG(TAG, "  Security: %s", this->security_type_.c_str());
@@ -743,7 +743,7 @@ void MMHalowComponent::dump_config() {
   }
 }
 
-std::string MMHalowComponent::get_ip_address_str() const {
+std::string HalowComponent::get_ip_address_str() const {
   if (this->ip_addresses_[0].is_set()) {
     char buf[64];
     this->ip_addresses_[0].str_to(buf);
@@ -752,5 +752,5 @@ std::string MMHalowComponent::get_ip_address_str() const {
   return "0.0.0.0";
 }
 
-}  // namespace mm_halow
+}  // namespace halow
 }  // namespace esphome

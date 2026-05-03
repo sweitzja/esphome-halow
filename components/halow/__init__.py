@@ -58,9 +58,14 @@ CONF_SSID_SENSOR = "connected_ssid"
 CONF_BSSID_SENSOR = "bssid"
 CONF_MAC_ADDRESS_SENSOR = "mac_address"
 CONF_FW_VERSION_SENSOR = "firmware_version"
+CONF_TYPE = "type"
+CONF_MODE = "mode"
 
-mm_halow_ns = cg.esphome_ns.namespace("mm_halow")
-MMHalowComponent = mm_halow_ns.class_("MMHalowComponent", cg.Component)
+CHIP_TYPES = {"MM6108": "MM6108", "MM8108": "MM8108"}
+MODE_TYPES = {"STATION": "STATION", "AP": "AP"}
+
+halow_ns = cg.esphome_ns.namespace("halow")
+HalowComponent = halow_ns.class_("HalowComponent", cg.Component)
 
 MANUAL_IP_SCHEMA = cv.Schema(
     {
@@ -92,7 +97,13 @@ def _text_sensor_schema(**kwargs):
 CONFIG_SCHEMA = cv.All(
     cv.Schema(
         {
-            cv.GenerateID(): cv.declare_id(MMHalowComponent),
+            cv.GenerateID(): cv.declare_id(HalowComponent),
+            cv.Optional(CONF_TYPE, default="MM6108"): cv.enum(
+                CHIP_TYPES, upper=True
+            ),
+            cv.Optional(CONF_MODE, default="STATION"): cv.enum(
+                MODE_TYPES, upper=True
+            ),
             cv.Required(CONF_SSID): cv.string,
             cv.Required(CONF_PASSWORD): cv.string,
             cv.Optional(CONF_COUNTRY_CODE, default="US"): cv.string_strict,
@@ -257,7 +268,7 @@ async def to_code(config):
             sens = await ts_ns.new_text_sensor(config[conf_key])
             cg.add(setter(sens))
 
-    cg.add_define("USE_MM_HALOW")
+    cg.add_define("USE_HALOW")
 
     # --- MM-IoT-SDK Integration ---
 
@@ -296,7 +307,7 @@ async def to_code(config):
     mmregdb_path = os.path.join(framework_path, "src", "mmregdb")
     if os.path.isdir(mmregdb_path):
         components.append(("mmregdb", "src/mmregdb"))
-        cg.add_define("USE_MM_HALOW_REGDB")
+        cg.add_define("USE_HALOW_REGDB")
     for name, subpath in components:
         add_idf_component(name=name, path=os.path.join(framework_path, subpath))
 
@@ -329,7 +340,12 @@ async def to_code(config):
             add_idf_sdkconfig_option("CONFIG_MM_BCF_MF08551", True)
         elif "mf08251" in bcf:
             add_idf_sdkconfig_option("CONFIG_MM_BCF_MF08251", True)
-    add_idf_sdkconfig_option("CONFIG_MMHAL_CHIP_TYPE_MM6108", True)
+    # Chip type
+    chip_type = config[CONF_TYPE]
+    if chip_type == "MM8108":
+        add_idf_sdkconfig_option("CONFIG_MMHAL_CHIP_TYPE_MM8108", True)
+    else:
+        add_idf_sdkconfig_option("CONFIG_MMHAL_CHIP_TYPE_MM6108", True)
 
     # Kconfig: FreeRTOS
     add_idf_sdkconfig_option("CONFIG_FREERTOS_HZ", 1000)
@@ -362,7 +378,7 @@ async def to_code(config):
         cg.add_build_flag(f"-I{esp_netif_internal}")
 
     # Wrap network utility functions so ESPHome's API/OTA components
-    # recognize mm_halow as a valid network provider. Without this,
+    # recognize halow as a valid network provider. Without this,
     # network::is_connected() returns false and API clients get disconnected.
     cg.add_build_flag("-Wl,--wrap=_ZN7esphome7network12is_connectedEv")
     cg.add_build_flag("-Wl,--wrap=_ZN7esphome7network16get_ip_addressesEv")

@@ -2,16 +2,16 @@
 
 ## Project Overview
 ESPHome external component for Wi-Fi HaLow (IEEE 802.11ah) using ESP32-S3 + Morse Micro MM6108.
-Provides a drop-in `mm_halow:` YAML block that replaces `wifi:` for long-range sub-GHz networking.
+Provides a drop-in `halow:` YAML block that replaces `wifi:` for long-range sub-GHz networking.
 Zero third-party dependencies beyond the auto-downloaded Morse Micro SDK.
 
 ## Repository Layout
 ```
 esphome-halow/
-├── components/mm_halow/       # ESPHome external component
+├── components/halow/       # ESPHome external component
 │   ├── __init__.py            # YAML config schema + code generation + auto-download SDK
-│   ├── mm_halow_component.h   # Component class with sensor pointers
-│   ├── mm_halow_component.cpp # MM-IoT-SDK bridge with state machine + mDNS + reconnect
+│   ├── halow_component.h   # Component class with sensor pointers
+│   ├── halow_component.cpp # MM-IoT-SDK bridge with state machine + mDNS + reconnect
 │   ├── network_wrap.cpp       # Linker --wrap overrides for network::is_connected()
 │   └── pre_build.py           # PlatformIO script: firmware blob linking (3 strategies)
 ├── spi_probe/                 # PlatformIO sketch: raw SPI probe of MM6108

@@ -14,7 +14,7 @@
 #include <array>
 
 namespace esphome {
-namespace mm_halow {
+namespace halow {
 
 enum class HalowState : uint8_t {
   STOPPED,
@@ -22,7 +22,7 @@ enum class HalowState : uint8_t {
   CONNECTED,
 };
 
-class MMHalowComponent : public Component {
+class HalowComponent : public Component {
  public:
   void setup() override;
   void loop() override;
@@ -148,7 +148,7 @@ class MMHalowComponent : public Component {
 #endif
 };
 
-extern MMHalowComponent *global_mm_halow_component;  // NOLINT
+extern HalowComponent *global_halow_component;  // NOLINT
 
-}  // namespace mm_halow
+}  // namespace halow
 }  // namespace esphome

@@ -2,7 +2,7 @@
  * Linker --wrap overrides for ESPHome network utility functions.
  *
  * ESPHome's network/util.cpp only checks USE_WIFI/USE_ETHERNET/etc.
- * We use --wrap to intercept these and add mm_halow as a network provider.
+ * We use --wrap to intercept these and add halow as a network provider.
  *
  * The --wrap=SYMBOL linker flag redirects:
  *   calls to SYMBOL -> __wrap_SYMBOL (our implementation)
@@ -11,11 +11,11 @@
 
 #include "esphome/core/defines.h"
 
-#ifdef USE_MM_HALOW
+#ifdef USE_HALOW
 #ifdef USE_NETWORK
 
 #include "esphome/components/network/ip_address.h"
-#include "mm_halow_component.h"
+#include "halow_component.h"
 #include <string>
 
 // Original functions (provided by linker via --wrap)
@@ -27,30 +27,30 @@ extern const char *__real__ZN7esphome7network15get_use_addressEv();
 
 // Wrapped: esphome::network::is_connected()
 extern "C" bool __wrap__ZN7esphome7network12is_connectedEv() {
-  if (esphome::mm_halow::global_mm_halow_component != nullptr &&
-      esphome::mm_halow::global_mm_halow_component->is_connected())
+  if (esphome::halow::global_halow_component != nullptr &&
+      esphome::halow::global_halow_component->is_connected())
     return true;
   return __real__ZN7esphome7network12is_connectedEv();
 }
 
 // Wrapped: esphome::network::get_ip_addresses()
 extern "C" esphome::network::IPAddresses __wrap__ZN7esphome7network16get_ip_addressesEv() {
-  if (esphome::mm_halow::global_mm_halow_component != nullptr &&
-      esphome::mm_halow::global_mm_halow_component->is_connected())
-    return esphome::mm_halow::global_mm_halow_component->get_ip_addresses();
+  if (esphome::halow::global_halow_component != nullptr &&
+      esphome::halow::global_halow_component->is_connected())
+    return esphome::halow::global_halow_component->get_ip_addresses();
   return __real__ZN7esphome7network16get_ip_addressesEv();
 }
 
 // Wrapped: esphome::network::get_use_address()
 static std::string s_halow_address;
 extern "C" const char *__wrap__ZN7esphome7network15get_use_addressEv() {
-  if (esphome::mm_halow::global_mm_halow_component != nullptr &&
-      esphome::mm_halow::global_mm_halow_component->is_connected()) {
-    s_halow_address = esphome::mm_halow::global_mm_halow_component->get_ip_address_str();
+  if (esphome::halow::global_halow_component != nullptr &&
+      esphome::halow::global_halow_component->is_connected()) {
+    s_halow_address = esphome::halow::global_halow_component->get_ip_address_str();
     return s_halow_address.c_str();
   }
   return __real__ZN7esphome7network15get_use_addressEv();
 }
 
 #endif  // USE_NETWORK
-#endif  // USE_MM_HALOW
+#endif  // USE_HALOW

@@ -4,7 +4,7 @@
 
 IEEE 802.11ah (Wi-Fi HaLow) operates in sub-1 GHz spectrum (902-928 MHz in North America)
 for long-range, low-power IoT connectivity. This project wraps the Morse Micro MM-IoT-SDK
-into an ESPHome external component, providing a `mm_halow:` config block analogous to `wifi:`
+into an ESPHome external component, providing a `halow:` config block analogous to `wifi:`
 or `ethernet:` (W5500).
 
 ## Hardware Stack
@@ -293,10 +293,10 @@ directly.
 
 ### Component Design
 ```
-components/mm_halow/
+components/halow/
 ├── __init__.py              # CONFIG_SCHEMA, to_code(), build flags, auto-download SDK
-├── mm_halow_component.h     # Class declaration with sensor pointers
-├── mm_halow_component.cpp   # MM-IoT-SDK bridge with state machine + mDNS
+├── halow_component.h     # Class declaration with sensor pointers
+├── halow_component.cpp   # MM-IoT-SDK bridge with state machine + mDNS
 ├── network_wrap.cpp         # Linker --wrap overrides for network::is_connected()
 └── pre_build.py             # PlatformIO script: firmware blob linking (3 strategies)
 ```
@@ -346,7 +346,7 @@ We use linker `--wrap` to intercept three mangled C++ symbols:
 - `_ZN7esphome7network16get_ip_addressesEv` (get_ip_addresses)
 - `_ZN7esphome7network15get_use_addressEv` (get_use_address)
 
-Each wrapper checks `global_mm_halow_component` first, then falls through to the
+Each wrapper checks `global_halow_component` first, then falls through to the
 original implementation. Without this, the API server disconnects all clients with
 "Network down" because it thinks there's no network.
 
@@ -375,7 +375,7 @@ can enable them with `sub_bands: true`.
 - Uses pre-patched Seeed MM-IoT-SDK v2.6.4 fork (IDF 5.5.2 compatible)
 
 ### Sensors
-All sensors are optional YAML config entries within the `mm_halow:` block:
+All sensors are optional YAML config entries within the `halow:` block:
 
 **Numeric sensors** (`sensor.sensor_schema()`):
 | Config Key       | Unit | Device Class      | Source API |

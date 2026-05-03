@@ -1,4 +1,4 @@
-"""PlatformIO extra script for mm_halow component.
+"""PlatformIO extra script for halow component.
 
 Ensures firmware binary objects (.mbin.o) are available for linking.
 Tries multiple strategies: ninja custom targets, copying pre-built .o
@@ -121,7 +121,7 @@ for obj_name, prefix, mbin_name in objects:
         target = f"esp-idf/mm_shims/{obj_name}"
         result = subprocess.run([ninja, target], cwd=build_dir, capture_output=True)
         if result.returncode == 0 and os.path.exists(obj_path):
-            print(f"mm_halow: Generated {obj_name} via ninja")
+            print(f"halow: Generated {obj_name} via ninja")
             generated = True
 
     # Strategy 2: copy pre-built .o from SDK (Seeed SDK has these)
@@ -131,7 +131,7 @@ for obj_name, prefix, mbin_name in objects:
             if os.path.exists(candidate):
                 os.makedirs(os.path.dirname(obj_path), exist_ok=True)
                 shutil.copy2(candidate, obj_path)
-                print(f"mm_halow: Copied {obj_name} from {sdk_mm_shims}")
+                print(f"halow: Copied {obj_name} from {sdk_mm_shims}")
                 generated = True
                 break
 
@@ -139,14 +139,14 @@ for obj_name, prefix, mbin_name in objects:
     if not generated:
         mbin_path = _find_mbin(mbin_name, sdk_paths)
         if mbin_path and _objcopy_mbin(mbin_path, obj_path, prefix):
-            print(f"mm_halow: Generated {obj_name} via objcopy from {mbin_path}")
+            print(f"halow: Generated {obj_name} via objcopy from {mbin_path}")
             generated = True
 
     if not generated:
-        print(f"mm_halow: WARNING: Could not generate {obj_name}")
+        print(f"halow: WARNING: Could not generate {obj_name}")
 
 # Always add to LINKFLAGS
 fw_obj = os.path.join(mm_shims_dir, "mm6108.mbin.o")
 bcf_obj = os.path.join(mm_shims_dir, f"{bcf_base}.mbin.o")
 env.Append(LINKFLAGS=[fw_obj, bcf_obj])
-print(f"mm_halow: FW={os.path.exists(fw_obj)} BCF={os.path.exists(bcf_obj)} ({bcf_base})")
+print(f"halow: FW={os.path.exists(fw_obj)} BCF={os.path.exists(bcf_obj)} ({bcf_base})")

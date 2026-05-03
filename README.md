@@ -2,7 +2,7 @@
 
 ESPHome external component for **Wi-Fi HaLow** (IEEE 802.11ah) using the [Morse Micro MM6108](https://www.morsemicro.com/chips/) SoC. Wi-Fi HaLow operates in sub-1 GHz spectrum (902-928 MHz in North America), offering up to 1 km range with low power consumption -- ideal for IoT devices that need to reach beyond standard Wi-Fi range.
 
-This component provides a drop-in network interface for ESPHome, replacing `wifi:` with `mm_halow:`. It works like the built-in W5500/Ethernet SPI support: configure your pins, SSID, and password in YAML, and get full Home Assistant connectivity over HaLow.
+This component provides a drop-in network interface for ESPHome, replacing `wifi:` with `halow:`. It works like the built-in W5500/Ethernet SPI support: configure your pins, SSID, and password in YAML, and get full Home Assistant connectivity over HaLow.
 
 ### Why HaLow over LoRa?
 
@@ -54,9 +54,9 @@ esp32:
 
 external_components:
   - source: github://sweitzja/esphome-halow
-    components: [mm_halow]
+    components: [halow]
 
-mm_halow:
+halow:
   ssid: "my-halow-ap"
   password: "my-password"
   country_code: "US"
@@ -213,7 +213,9 @@ Without step 4, inbound traffic (ping, API, OTA) will be blocked by NAT.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `ssid` | string | **required** | HaLow AP SSID |
+| `type` | enum | `MM6108` | Chip type: `MM6108` or `MM8108` |
+| `mode` | enum | `STATION` | Operating mode: `STATION` or `AP` (AP requires MM8108) |
+| `ssid` | string | **required** | HaLow AP SSID (station mode) |
 | `password` | string | **required** | WPA3-SAE passphrase |
 | `security` | enum | `SAE` | Security type: `SAE` (WPA3), `OWE`, or `OPEN` |
 | `bcf_file` | string | `bcf_mf16858.mbin` | Board configuration file |

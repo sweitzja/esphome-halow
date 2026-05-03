@@ -14,7 +14,9 @@ external_components:
       path: components
 
 # HaLow network (replaces wifi:)
-mm_halow:
+halow:
+  type: MM6108                           # MM6108 (station) or MM8108 (station/AP)
+  mode: STATION                          # STATION or AP (AP requires MM8108)
   ssid: "halowlink2-627b"
   password: "your-password-here"
   country_code: "US"
