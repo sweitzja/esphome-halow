@@ -57,6 +57,8 @@ external_components:
     components: [halow]
 
 halow:
+  type: MM6108                         # MM6108 (station) or MM8108 (station/AP)
+  mode: STATION                        # STATION or AP (AP requires MM8108)
   ssid: "my-halow-ap"
   password: "my-password"
   country_code: "US"
