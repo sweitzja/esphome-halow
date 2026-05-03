@@ -41,7 +41,7 @@
 #ifndef SAE_PASSPHRASE
 /** Passphrase of the AP (ignored if security type is not SAE).
  *  (Do not quote; it will be stringified.) */
-#define SAE_PASSPHRASE                  your-password-here
+#define SAE_PASSPHRASE                  your_password_here
 #endif
 
 /* Default security type  */
