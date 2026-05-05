@@ -91,6 +91,28 @@ halow:
     name: "HaLow TX Rate"
   rx_pps:
     name: "HaLow RX Rate"
+  tx_kbps:
+    name: "HaLow TX Throughput"
+  rx_kbps:
+    name: "HaLow RX Throughput"
+
+  # Diagnostic sensors
+  noise_floor:
+    name: "HaLow Noise Floor"
+  tx_frames_dropped:
+    name: "HaLow TX Dropped"
+  rx_frames_dropped:
+    name: "HaLow RX Dropped"
+  ccmp_failures:
+    name: "HaLow CCMP Failures"
+  hw_restarts:
+    name: "HaLow HW Restarts"
+
+  # Channel scan (button + results)
+  scan_channel:
+    name: "HaLow Channel Scan"
+  scan_results:
+    name: "HaLow Scan Results"
 
   # Network info sensors
   ip_address:
@@ -381,6 +403,89 @@ tx_pps:
   name: "HaLow TX Rate"
 rx_pps:
   name: "HaLow RX Rate"
+```
+
+##### `tx_kbps` / `rx_kbps`
+**Type**: Numeric sensor (kilobits per second)
+
+Throughput sensors measuring actual data transferred over the HaLow link.
+TX bytes are counted at the LWIP link-output layer; RX bytes are counted
+via a wrapped `tcpip_input` hook.
+
+```yaml
+tx_kbps:
+  name: "HaLow TX Throughput"
+rx_kbps:
+  name: "HaLow RX Throughput"
+```
+
+#### Diagnostic Sensors
+
+##### `noise_floor`
+**Type**: Numeric sensor (dBm)
+
+Background noise level measured during the last channel scan. Updated each time the
+`scan_channel` button is pressed. Use this to identify interference on your channel.
+
+| Noise Floor | Meaning |
+|-------------|---------|
+| -90 to -95 | Clean — no interference |
+| -80 to -85 | Light interference |
+| -70 to -75 | Moderate — consider changing AP channel |
+| -60 or higher | Heavy interference — change channel immediately |
+
+```yaml
+noise_floor:
+  name: "HaLow Noise Floor"
+```
+
+##### `tx_frames_dropped` / `rx_frames_dropped`
+**Type**: Numeric sensor (total increasing)
+
+Counts of frames dropped due to TX or RX queue overflow in the UMAC. Non-zero values
+indicate the radio can't keep up — usually caused by sustained interference or
+extremely high traffic.
+
+##### `ccmp_failures`
+**Type**: Numeric sensor (total increasing)
+
+Count of CCMP (AES encryption) decryption failures. Non-zero values indicate
+bit errors from interference corrupting encrypted frames.
+
+##### `hw_restarts`
+**Type**: Numeric sensor (total increasing)
+
+Count of MM6108 hardware restart events. Should remain at 0 during normal operation.
+Non-zero indicates severe issues (firmware crash, SPI failure, or extreme interference).
+
+#### Channel Scan
+
+##### `scan_channel`
+**Type**: Button
+
+Triggers an on-demand channel scan. The MM6108 scans all available channels and
+reports every AP it finds. Results are published to the `scan_results` text sensor
+and the `noise_floor` sensor is updated from the scan data.
+
+##### `scan_results`
+**Type**: Text sensor (JSON)
+
+JSON array of all APs found during the last channel scan. Each entry includes:
+
+```json
+[
+  {"ssid":"my-ap","bssid":"50:2E:91:D2:C9:E4","rssi":-41,"noise":-92,"freq":924000,"bw":8}
+]
+```
+
+Fields: `ssid`, `bssid`, `rssi` (dBm), `noise` (noise floor in dBm),
+`freq` (center frequency in kHz), `bw` (bandwidth in MHz).
+
+```yaml
+scan_channel:
+  name: "HaLow Channel Scan"
+scan_results:
+  name: "HaLow Scan Results"
 ```
 
 #### Network Info Sensors

@@ -46,6 +46,10 @@ halow:
     name: "HaLow TX Rate"
   rx_pps:
     name: "HaLow RX Rate"
+  tx_kbps:
+    name: "HaLow TX Throughput"
+  rx_kbps:
+    name: "HaLow RX Throughput"
   mcs:
     name: "HaLow MCS"
   bandwidth:
@@ -66,6 +70,20 @@ halow:
     name: "HaLow FW Version"
   link_quality:
     name: "HaLow Link Quality"
+  noise_floor:
+    name: "HaLow Noise Floor"
+  tx_frames_dropped:
+    name: "HaLow TX Dropped"
+  rx_frames_dropped:
+    name: "HaLow RX Dropped"
+  ccmp_failures:
+    name: "HaLow CCMP Failures"
+  hw_restarts:
+    name: "HaLow HW Restarts"
+  scan_results:
+    name: "HaLow Scan Results"
+  scan_channel:
+    name: "HaLow Channel Scan"
 
 api:
 

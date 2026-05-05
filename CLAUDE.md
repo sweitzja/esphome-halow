@@ -70,22 +70,30 @@ esphome upload example.yaml --device 192.168.1.86
 - Power save MUST be disabled (BUSY pin broken in MM firmware)
 - `netif_set_link_up()` forced after IP acquisition with `LOCK_TCPIP_CORE()` wrapper
 - Reconnection via FreeRTOS timer (NOT main loop — SDK wedges if called from main loop)
+- TX bytes counted via `netif->linkoutput` hook; RX bytes via `--wrap=tcpip_input` (SDK calls `tcpip_input()` directly, bypassing `netif->input`)
+- UMAC stats via `mmwlan_get_umac_stats()` — exposes TX/RX queue drops, CCMP failures, HW restarts
+- Channel scan via `mmwlan_scan_request()` while connected — `noise_dbm` in scan results is the only source of noise floor data (no SNR API for active connections)
+- 902-928 MHz ISM band shared with LoRa, smart meters, YoLink — channel selection matters (channel 44/924 MHz often cleanest in US)
 
-## Exposed Sensors (14 total)
+## Exposed Sensors (22 total) + 1 Button
 **Signal**: rssi (dBm), link_quality (Excellent/Good/Fair/Poor/Critical)
 **Radio**: mcs (0-7), bandwidth (MHz), tx_success_rate (%)
-**Traffic**: tx_pps, rx_pps (packets per second)
+**Traffic**: tx_pps, rx_pps (packets per second), tx_kbps, rx_kbps (kilobits per second)
+**Diagnostics**: noise_floor (dBm, from scan), tx_frames_dropped, rx_frames_dropped, ccmp_failures, hw_restarts
 **Network**: ip_address, gateway_address, subnet_mask, connected_ssid, bssid, mac_address, firmware_version
+**Channel Scan**: scan_channel (button), scan_results (JSON text sensor)
 
 ## Working Test Results
 ```
 FW: 1.17.6, morselib: 2.10.4-esp32, chip: 0x306
-MAC: A8:DD:9F:4D:C6:01, RSSI: -38 dBm
+MAC: A8:DD:9F:4D:C6:01, RSSI: -39 dBm
 IP: 192.168.1.86, GW: 192.168.1.1 (bridged via HaLowLink 2)
 Ping: 10/10, 0% loss, 7-11ms (power save disabled)
-MCS: 7, Bandwidth: 8 MHz (sub-bands disabled)
+MCS: 7, Bandwidth: 8 MHz (sub-bands disabled), TX success: 100%
+Channel: 44 (924 MHz) — cleanest in US ISM band, avoids 915 MHz LoRa interference
+Noise floor: -92 dBm (channel 44), vs -60 dBm (channel 28 near YoLink/LoRa devices)
 mDNS: halow-test.local + _esphomelib._tcp registered
-HA: Home Assistant 2026.4.2 connected, all 14 sensors visible
+HA: Home Assistant 2026.4.2 connected, all 22 sensors + scan button visible
 OTA: 1.05MB in 8-13s over HaLow, reboot + reconnect clean
 Reconnect: FreeRTOS timer, 16s range walk recovery, no crash
 Link Quality: Excellent→Poor→Excellent (MCS 7→0→7 observed in real time)

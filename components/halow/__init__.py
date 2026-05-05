@@ -20,7 +20,7 @@ from esphome.core import coroutine_with_priority, CORE
 from esphome.components.esp32 import add_idf_sdkconfig_option, add_idf_component
 
 DEPENDENCIES = ["esp32"]
-AUTO_LOAD = ["network", "sensor", "text_sensor"]
+AUTO_LOAD = ["network", "sensor", "text_sensor", "button"]
 CONFLICTS_WITH = ["wifi"]
 
 CONF_COUNTRY_CODE = "country_code"
@@ -46,10 +46,19 @@ CONF_BUSY_PIN = "busy_pin"
 CONF_RSSI_SENSOR = "rssi"
 CONF_TX_PPS = "tx_pps"
 CONF_RX_PPS = "rx_pps"
+CONF_TX_KBPS = "tx_kbps"
+CONF_RX_KBPS = "rx_kbps"
 CONF_MCS = "mcs"
 CONF_BANDWIDTH = "bandwidth"
 CONF_TX_SUCCESS_RATE = "tx_success_rate"
 CONF_LINK_QUALITY = "link_quality"
+CONF_NOISE_FLOOR = "noise_floor"
+CONF_TX_FRAMES_DROPPED = "tx_frames_dropped"
+CONF_RX_FRAMES_DROPPED = "rx_frames_dropped"
+CONF_CCMP_FAILURES = "ccmp_failures"
+CONF_HW_RESTARTS = "hw_restarts"
+CONF_SCAN_RESULTS = "scan_results"
+CONF_SCAN_BUTTON = "scan_channel"
 CONF_SUB_BANDS = "sub_bands"
 CONF_IP_ADDRESS_SENSOR = "ip_address"
 CONF_GATEWAY_SENSOR = "gateway_address"
@@ -66,6 +75,9 @@ MODE_TYPES = {"STATION": "STATION", "AP": "AP"}
 
 halow_ns = cg.esphome_ns.namespace("halow")
 HalowComponent = halow_ns.class_("HalowComponent", cg.Component)
+HalowScanButton = halow_ns.class_(
+    "HalowScanButton", cg.esphome_ns.namespace("button").class_("Button")
+)
 
 MANUAL_IP_SCHEMA = cv.Schema(
     {
@@ -92,6 +104,13 @@ def _text_sensor_schema(**kwargs):
     import esphome.components.text_sensor as ts_ns
 
     return ts_ns.text_sensor_schema(**kwargs)
+
+
+def _button_schema(class_, **kwargs):
+    """Import button schema lazily to avoid circular deps."""
+    import esphome.components.button as button_ns
+
+    return button_ns.button_schema(class_, **kwargs)
 
 
 CONFIG_SCHEMA = cv.All(
@@ -149,6 +168,20 @@ CONFIG_SCHEMA = cv.All(
                 entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
                 icon="mdi:download-network",
             ),
+            cv.Optional(CONF_TX_KBPS): _sensor_schema(
+                unit_of_measurement="kbps",
+                accuracy_decimals=1,
+                state_class=STATE_CLASS_MEASUREMENT,
+                entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+                icon="mdi:upload-network",
+            ),
+            cv.Optional(CONF_RX_KBPS): _sensor_schema(
+                unit_of_measurement="kbps",
+                accuracy_decimals=1,
+                state_class=STATE_CLASS_MEASUREMENT,
+                entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+                icon="mdi:download-network",
+            ),
             cv.Optional(CONF_MCS): _sensor_schema(
                 accuracy_decimals=0,
                 state_class=STATE_CLASS_MEASUREMENT,
@@ -198,6 +231,48 @@ CONFIG_SCHEMA = cv.All(
             cv.Optional(CONF_LINK_QUALITY): _text_sensor_schema(
                 icon="mdi:wifi-strength-outline",
             ),
+            cv.Optional(CONF_SCAN_RESULTS): _text_sensor_schema(
+                entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+                icon="mdi:radar",
+            ),
+            # UMAC diagnostic sensors
+            cv.Optional(CONF_NOISE_FLOOR): _sensor_schema(
+                unit_of_measurement="dBm",
+                accuracy_decimals=0,
+                state_class=STATE_CLASS_MEASUREMENT,
+                entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+                icon="mdi:sine-wave",
+            ),
+            cv.Optional(CONF_TX_FRAMES_DROPPED): _sensor_schema(
+                accuracy_decimals=0,
+                state_class=STATE_CLASS_TOTAL_INCREASING,
+                entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+                icon="mdi:alert-circle-outline",
+            ),
+            cv.Optional(CONF_RX_FRAMES_DROPPED): _sensor_schema(
+                accuracy_decimals=0,
+                state_class=STATE_CLASS_TOTAL_INCREASING,
+                entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+                icon="mdi:alert-circle-outline",
+            ),
+            cv.Optional(CONF_CCMP_FAILURES): _sensor_schema(
+                accuracy_decimals=0,
+                state_class=STATE_CLASS_TOTAL_INCREASING,
+                entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+                icon="mdi:shield-alert-outline",
+            ),
+            cv.Optional(CONF_HW_RESTARTS): _sensor_schema(
+                accuracy_decimals=0,
+                state_class=STATE_CLASS_TOTAL_INCREASING,
+                entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+                icon="mdi:restart-alert",
+            ),
+            # Channel scan button
+            cv.Optional(CONF_SCAN_BUTTON): _button_schema(
+                HalowScanButton,
+                entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+                icon="mdi:radar",
+            ),
         }
     ),
     cv.only_on_esp32,
@@ -246,9 +321,16 @@ async def to_code(config):
         (CONF_RSSI_SENSOR, var.set_rssi_sensor),
         (CONF_TX_PPS, var.set_tx_pps_sensor),
         (CONF_RX_PPS, var.set_rx_pps_sensor),
+        (CONF_TX_KBPS, var.set_tx_kbps_sensor),
+        (CONF_RX_KBPS, var.set_rx_kbps_sensor),
         (CONF_MCS, var.set_mcs_sensor),
         (CONF_BANDWIDTH, var.set_bandwidth_sensor),
         (CONF_TX_SUCCESS_RATE, var.set_tx_success_rate_sensor),
+        (CONF_NOISE_FLOOR, var.set_noise_floor_sensor),
+        (CONF_TX_FRAMES_DROPPED, var.set_tx_frames_dropped_sensor),
+        (CONF_RX_FRAMES_DROPPED, var.set_rx_frames_dropped_sensor),
+        (CONF_CCMP_FAILURES, var.set_ccmp_failures_sensor),
+        (CONF_HW_RESTARTS, var.set_hw_restarts_sensor),
     ]:
         if conf_key in config:
             sens = await sensor_ns.new_sensor(config[conf_key])
@@ -263,10 +345,18 @@ async def to_code(config):
         (CONF_MAC_ADDRESS_SENSOR, var.set_mac_address_sensor),
         (CONF_FW_VERSION_SENSOR, var.set_fw_version_sensor),
         (CONF_LINK_QUALITY, var.set_link_quality_sensor),
+        (CONF_SCAN_RESULTS, var.set_scan_results_sensor),
     ]:
         if conf_key in config:
             sens = await ts_ns.new_text_sensor(config[conf_key])
             cg.add(setter(sens))
+
+    # Scan button
+    if CONF_SCAN_BUTTON in config:
+        import esphome.components.button as button_ns
+
+        btn = await button_ns.new_button(config[CONF_SCAN_BUTTON])
+        cg.add(btn.set_parent(var))
 
     cg.add_define("USE_HALOW")
 
@@ -383,6 +473,10 @@ async def to_code(config):
     cg.add_build_flag("-Wl,--wrap=_ZN7esphome7network12is_connectedEv")
     cg.add_build_flag("-Wl,--wrap=_ZN7esphome7network16get_ip_addressesEv")
     cg.add_build_flag("-Wl,--wrap=_ZN7esphome7network15get_use_addressEv")
+
+    # Wrap tcpip_input for RX byte counting — the SDK calls tcpip_input()
+    # directly instead of going through netif->input
+    cg.add_build_flag("-Wl,--wrap=tcpip_input")
 
     # PlatformIO extra script for firmware blob generation
     cg.add_platformio_option(

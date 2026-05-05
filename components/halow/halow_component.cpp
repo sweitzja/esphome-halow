@@ -17,6 +17,7 @@ extern "C" {
 #include "mmhal.h"
 #include "mmosal.h"
 #include "mmwlan.h"
+#include "mmwlan_stats.h"
 #include "mmipal.h"
 #ifdef USE_HALOW_REGDB
 #include "mmregdb.h"
@@ -149,6 +150,41 @@ static void do_halow_reconnect(TimerHandle_t t) {
   }
   // If sta_enable succeeds, the mmipal callback will set s_reconnecting = false
   // when link comes up
+}
+
+// --- Channel Scan State ---
+static std::string s_scan_json;
+static volatile int8_t s_scan_noise_dbm = 0;
+static volatile bool s_scan_has_noise = false;
+static volatile bool s_scan_complete = false;
+static volatile bool s_scan_running = false;
+
+// --- Byte Counters (for kbps sensors) ---
+// TX: hook netif->output (etharp_output wrapper) to count outgoing bytes.
+// RX: hook netif->linkoutput is TX-only. The SDK calls tcpip_input() directly for RX,
+//     bypassing netif->input. So for RX bytes we estimate from packet counts × avg size,
+//     or we wrap the linkoutput for TX and use a LWIP raw PCB for RX.
+//     Simplest correct approach: wrap linkoutput for TX, use pcb recv for RX.
+static volatile uint32_t s_tx_bytes = 0;
+static volatile uint32_t s_rx_bytes = 0;
+static netif_linkoutput_fn s_original_linkoutput = nullptr;
+
+static err_t halow_linkoutput_hook(struct netif *netif, struct pbuf *p) {
+  s_tx_bytes += p->tot_len;
+  return s_original_linkoutput(netif, p);
+}
+
+// For RX, we wrap tcpip_input via --wrap linker flag. The SDK calls tcpip_input()
+// directly instead of going through netif->input, so hooking netif->input doesn't work.
+extern "C" {
+  extern err_t __real_tcpip_input(struct pbuf *p, struct netif *inp);
+  err_t __wrap_tcpip_input(struct pbuf *p, struct netif *inp) {
+    // Only count bytes for the HaLow netif (name "MM")
+    if (inp != nullptr && inp->name[0] == 'M' && inp->name[1] == 'M') {
+      s_rx_bytes += p->tot_len;
+    }
+    return __real_tcpip_input(p, inp);
+  }
 }
 
 // --- Component Lifecycle ---
@@ -418,6 +454,14 @@ void HalowComponent::loop() {
                 netif_set_link_up(nif);
                 ESP_LOGI(TAG, "Forced LWIP netif link UP");
               }
+              // Install byte counter hooks (once)
+              if (s_original_linkoutput == nullptr && nif->linkoutput != nullptr) {
+                // TX: wrap linkoutput to count bytes at the frame level
+                s_original_linkoutput = nif->linkoutput;
+                nif->linkoutput = halow_linkoutput_hook;
+                // RX: handled by __wrap_tcpip_input (linker wrap)
+                ESP_LOGI(TAG, "Byte counter hooks installed");
+              }
               break;
             }
           }
@@ -468,6 +512,24 @@ void HalowComponent::loop() {
           this->update_sensors_();
           this->last_sensor_update_ = now;
         }
+        // Check for scan completion
+        if (s_scan_complete && s_scan_running) {
+          s_scan_running = false;
+          s_scan_complete = false;
+          s_scan_json += "]";
+#ifdef USE_TEXT_SENSOR
+          if (this->scan_results_sensor_ != nullptr) {
+            this->scan_results_sensor_->publish_state(s_scan_json);
+          }
+#endif
+#ifdef USE_SENSOR
+          if (this->noise_floor_sensor_ != nullptr && s_scan_has_noise) {
+            this->noise_floor_sensor_->publish_state((float) s_scan_noise_dbm);
+          }
+#endif
+          s_scan_json.clear();
+          ESP_LOGI(TAG, "Scan results published (noise=%d dBm)", (int) s_scan_noise_dbm);
+        }
       }
       break;
     }
@@ -499,6 +561,23 @@ void HalowComponent::update_sensors_() {
     }
     this->prev_tx_packets_ = tx;
     this->prev_rx_packets_ = rx;
+  }
+  if (this->tx_kbps_sensor_ != nullptr || this->rx_kbps_sensor_ != nullptr) {
+    uint32_t tx_b = s_tx_bytes;
+    uint32_t rx_b = s_rx_bytes;
+    float interval_s = SENSOR_UPDATE_INTERVAL_MS / 1000.0f;
+    int32_t tx_byte_delta = (int32_t)(tx_b - this->prev_tx_bytes_);
+    int32_t rx_byte_delta = (int32_t)(rx_b - this->prev_rx_bytes_);
+    if (this->prev_tx_bytes_ > 0 && tx_byte_delta > 0 && tx_byte_delta < 10000000) {
+      if (this->tx_kbps_sensor_ != nullptr)
+        this->tx_kbps_sensor_->publish_state((float) tx_byte_delta * 8.0f / 1000.0f / interval_s);
+    }
+    if (this->prev_rx_bytes_ > 0 && rx_byte_delta > 0 && rx_byte_delta < 10000000) {
+      if (this->rx_kbps_sensor_ != nullptr)
+        this->rx_kbps_sensor_->publish_state((float) rx_byte_delta * 8.0f / 1000.0f / interval_s);
+    }
+    this->prev_tx_bytes_ = tx_b;
+    this->prev_rx_bytes_ = rx_b;
   }
 
   // Rate control stats: find the CURRENTLY active rate by comparing deltas
@@ -572,6 +651,22 @@ void HalowComponent::update_sensors_() {
 #endif
       }
       mmwlan_free_rc_stats(rc);
+    }
+  }
+
+  // UMAC stats — interference and error indicators
+  if (this->tx_frames_dropped_sensor_ != nullptr || this->rx_frames_dropped_sensor_ != nullptr ||
+      this->ccmp_failures_sensor_ != nullptr || this->hw_restarts_sensor_ != nullptr) {
+    struct mmwlan_stats_umac_data umac_stats;
+    if (mmwlan_get_umac_stats(&umac_stats) == MMWLAN_SUCCESS) {
+      if (this->tx_frames_dropped_sensor_ != nullptr)
+        this->tx_frames_dropped_sensor_->publish_state((float) umac_stats.datapath_txq_frames_dropped);
+      if (this->rx_frames_dropped_sensor_ != nullptr)
+        this->rx_frames_dropped_sensor_->publish_state((float) umac_stats.datapath_rxq_frames_dropped);
+      if (this->ccmp_failures_sensor_ != nullptr)
+        this->ccmp_failures_sensor_->publish_state((float) umac_stats.datapath_rx_ccmp_failures);
+      if (this->hw_restarts_sensor_ != nullptr)
+        this->hw_restarts_sensor_->publish_state((float) umac_stats.hw_restart_counter);
     }
   }
 #endif
@@ -750,6 +845,79 @@ std::string HalowComponent::get_ip_address_str() const {
     return std::string(buf);
   }
   return "0.0.0.0";
+}
+
+// --- Channel Scan ---
+
+static void halow_scan_rx_cb(const struct mmwlan_scan_result *result, void *arg) {
+  char bssid[18];
+  snprintf(bssid, sizeof(bssid), "%02X:%02X:%02X:%02X:%02X:%02X",
+           result->bssid[0], result->bssid[1], result->bssid[2],
+           result->bssid[3], result->bssid[4], result->bssid[5]);
+
+  char ssid[33] = {0};
+  if (result->ssid_len > 0 && result->ssid_len <= 32) {
+    memcpy(ssid, result->ssid, result->ssid_len);
+  }
+
+  // Build JSON entry
+  char entry[200];
+  snprintf(entry, sizeof(entry),
+           "{\"ssid\":\"%s\",\"bssid\":\"%s\",\"rssi\":%d,\"noise\":%d,\"freq\":%lu,\"bw\":%u}",
+           ssid, bssid, (int) result->rssi, (int) result->noise_dbm,
+           (unsigned long) (result->channel_freq_hz / 1000), result->bw_mhz);
+
+  if (s_scan_json.length() > 1) {
+    s_scan_json += ",";
+  }
+  s_scan_json += entry;
+
+  // Track noise floor from our AP's channel (use the best noise reading)
+  if (!s_scan_has_noise || result->noise_dbm > s_scan_noise_dbm) {
+    // Higher noise = worse, but we want the reading from our channel.
+    // Just take the last reading — typically there's one AP on our channel.
+    s_scan_noise_dbm = result->noise_dbm;
+    s_scan_has_noise = true;
+  }
+
+  ESP_LOGD(TAG, "Scan: %s (%s) RSSI=%d noise=%d freq=%luHz bw=%uMHz",
+           ssid, bssid, (int) result->rssi, (int) result->noise_dbm,
+           (unsigned long) result->channel_freq_hz, result->bw_mhz);
+}
+
+static void halow_scan_complete_cb(enum mmwlan_scan_state state, void *arg) {
+  ESP_LOGI(TAG, "Channel scan complete (state=%d)", (int) state);
+  s_scan_complete = true;
+}
+
+void HalowComponent::request_channel_scan() {
+  if (s_scan_running) {
+    ESP_LOGW(TAG, "Scan already in progress");
+    return;
+  }
+  if (this->state_ != HalowState::CONNECTED) {
+    ESP_LOGW(TAG, "Cannot scan — not connected");
+    return;
+  }
+
+  ESP_LOGI(TAG, "Starting channel scan...");
+  s_scan_json = "[";
+  s_scan_noise_dbm = 0;
+  s_scan_has_noise = false;
+  s_scan_complete = false;
+  s_scan_running = true;
+
+  struct mmwlan_scan_req scan_req = MMWLAN_SCAN_REQ_INIT;
+  scan_req.scan_rx_cb = halow_scan_rx_cb;
+  scan_req.scan_complete_cb = halow_scan_complete_cb;
+  scan_req.scan_cb_arg = nullptr;
+
+  enum mmwlan_status status = mmwlan_scan_request(&scan_req);
+  if (status != MMWLAN_SUCCESS) {
+    ESP_LOGW(TAG, "Scan request failed: %d", (int) status);
+    s_scan_running = false;
+    s_scan_json.clear();
+  }
 }
 
 }  // namespace halow

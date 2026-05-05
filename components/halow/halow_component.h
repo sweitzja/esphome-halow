@@ -9,6 +9,9 @@
 #ifdef USE_TEXT_SENSOR
 #include "esphome/components/text_sensor/text_sensor.h"
 #endif
+#ifdef USE_BUTTON
+#include "esphome/components/button/button.h"
+#endif
 
 #include <string>
 #include <array>
@@ -60,9 +63,16 @@ class HalowComponent : public Component {
   void set_rssi_sensor(sensor::Sensor *s) { this->rssi_sensor_ = s; }
   void set_tx_pps_sensor(sensor::Sensor *s) { this->tx_pps_sensor_ = s; }
   void set_rx_pps_sensor(sensor::Sensor *s) { this->rx_pps_sensor_ = s; }
+  void set_tx_kbps_sensor(sensor::Sensor *s) { this->tx_kbps_sensor_ = s; }
+  void set_rx_kbps_sensor(sensor::Sensor *s) { this->rx_kbps_sensor_ = s; }
   void set_mcs_sensor(sensor::Sensor *s) { this->mcs_sensor_ = s; }
   void set_bandwidth_sensor(sensor::Sensor *s) { this->bandwidth_sensor_ = s; }
   void set_tx_success_rate_sensor(sensor::Sensor *s) { this->tx_success_rate_sensor_ = s; }
+  void set_noise_floor_sensor(sensor::Sensor *s) { this->noise_floor_sensor_ = s; }
+  void set_tx_frames_dropped_sensor(sensor::Sensor *s) { this->tx_frames_dropped_sensor_ = s; }
+  void set_rx_frames_dropped_sensor(sensor::Sensor *s) { this->rx_frames_dropped_sensor_ = s; }
+  void set_ccmp_failures_sensor(sensor::Sensor *s) { this->ccmp_failures_sensor_ = s; }
+  void set_hw_restarts_sensor(sensor::Sensor *s) { this->hw_restarts_sensor_ = s; }
 #endif
 #ifdef USE_TEXT_SENSOR
   void set_ip_address_sensor(text_sensor::TextSensor *s) { this->ip_address_sensor_ = s; }
@@ -73,7 +83,15 @@ class HalowComponent : public Component {
   void set_mac_address_sensor(text_sensor::TextSensor *s) { this->mac_address_sensor_ = s; }
   void set_fw_version_sensor(text_sensor::TextSensor *s) { this->fw_version_sensor_ = s; }
   void set_link_quality_sensor(text_sensor::TextSensor *s) { this->link_quality_sensor_ = s; }
+  void set_scan_results_sensor(text_sensor::TextSensor *s) { this->scan_results_sensor_ = s; }
 #endif
+#ifdef USE_BUTTON
+  // Button stored for reference but not used — HalowScanButton calls request_channel_scan() directly
+  void set_scan_button(button::Button *b) { (void) b; }
+#endif
+
+  // Called by the scan button
+  void request_channel_scan();
 
  protected:
   void start_connect_();
@@ -125,11 +143,20 @@ class HalowComponent : public Component {
   sensor::Sensor *rssi_sensor_{nullptr};
   sensor::Sensor *tx_pps_sensor_{nullptr};
   sensor::Sensor *rx_pps_sensor_{nullptr};
+  sensor::Sensor *tx_kbps_sensor_{nullptr};
+  sensor::Sensor *rx_kbps_sensor_{nullptr};
   uint32_t prev_tx_packets_{0};
   uint32_t prev_rx_packets_{0};
+  uint32_t prev_tx_bytes_{0};
+  uint32_t prev_rx_bytes_{0};
   sensor::Sensor *mcs_sensor_{nullptr};
   sensor::Sensor *bandwidth_sensor_{nullptr};
   sensor::Sensor *tx_success_rate_sensor_{nullptr};
+  sensor::Sensor *noise_floor_sensor_{nullptr};
+  sensor::Sensor *tx_frames_dropped_sensor_{nullptr};
+  sensor::Sensor *rx_frames_dropped_sensor_{nullptr};
+  sensor::Sensor *ccmp_failures_sensor_{nullptr};
+  sensor::Sensor *hw_restarts_sensor_{nullptr};
   // Previous rc_stats snapshot for delta computation
   static const uint8_t MAX_RC_ENTRIES = 32;
   uint32_t prev_rc_sent_[MAX_RC_ENTRIES]{};
@@ -145,10 +172,22 @@ class HalowComponent : public Component {
   text_sensor::TextSensor *mac_address_sensor_{nullptr};
   text_sensor::TextSensor *fw_version_sensor_{nullptr};
   text_sensor::TextSensor *link_quality_sensor_{nullptr};
+  text_sensor::TextSensor *scan_results_sensor_{nullptr};
 #endif
 };
 
 extern HalowComponent *global_halow_component;  // NOLINT
+
+#ifdef USE_BUTTON
+class HalowScanButton : public button::Button {
+ public:
+  void set_parent(HalowComponent *parent) { this->parent_ = parent; }
+  void press_action() override { this->parent_->request_channel_scan(); }
+
+ protected:
+  HalowComponent *parent_{nullptr};
+};
+#endif
 
 }  // namespace halow
 }  // namespace esphome
